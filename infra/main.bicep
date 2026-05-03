@@ -78,7 +78,7 @@ var commonTags = {
   ManagedBy: 'damco'
   Client: 'seaboard-marine'
   CostCenter: '${projectName}-${environment}-2026'
-  DeployedBy: 'azure-devops'
+  DeployedBy: 'github-actions'
   CreatedOn: '2026-04-26'
 }
 
