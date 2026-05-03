@@ -48,4 +48,4 @@ resource consumerGroup 'Microsoft.EventHub/namespaces/eventhubs/consumergroups@2
 output eventHubNamespaceId string = eventHubNamespace.id
 output eventHubNamespaceName string = eventHubNamespace.name
 output eventHubName string = eventHub.name
-output eventHubConnectionString string = eventHubNamespace.listKeys('RootManageSharedAccessKey').primaryConnectionString
+output eventHubConnectionString string = listKeys(resourceId('Microsoft.EventHub/namespaces/authorizationRules', eventHubNamespaceName, 'RootManageSharedAccessKey'), '2024-01-01').primaryConnectionString
