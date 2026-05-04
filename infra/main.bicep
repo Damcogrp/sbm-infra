@@ -1,7 +1,7 @@
 // ============================================================
 // main.bicep — SBM Infrastructure Orchestrator
 // Naming: Microsoft CAF standard
-// Tagging: Damco enterprise standard
+// Tagging: Damco enterprise standard today
 // Region: Central India (cin)
 // ============================================================
 
