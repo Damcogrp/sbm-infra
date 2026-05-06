@@ -1,7 +1,7 @@
 // ============================================================
 // modules/appservice.bicep
 // CAF names:
-//   Plan:     asp-sbm-{env}-cin
+//   Plan:     asp-sbm-{env}-cin today
 //   Frontend: app-sbm-{env}-cin-fe
 //   Backend:  app-sbm-{env}-cin-be
 //   EventBus: func-sbm-{env}-cin-evb
