@@ -1,27 +1,18 @@
 # ============================================================
-# deploy-infra-dev.yml — SBM Infrastructure GitHub Actions Pipeline
-# Repo:        SeaboardMarine-Infra (Damcogrp)
-# Trigger:     PR validation on every PR to main
-#              Deploy on merge to main only
-# Auth:        Workload Identity Federation (no secrets)
-# Naming:      Microsoft CAF standard
-# Tagging:     Damco enterprise standard
+# deploy-infra-dev.yml — DEV Environment (Damco Azure)
+# Trigger: PR validation + merge to main
+# Auth:    OIDC Federated Identity (Damco subscription)
 # ============================================================
 
 name: SBM Infra — Dev Deploy
 
 on:
   push:
-    branches:
-      - main
-    paths:
-      - 'infra/**'
+    branches: [ main ]
+    paths: [ 'infra/**' ]
   pull_request:
-    branches:
-      - main
-    paths:
-      - 'infra/**'
-  workflow_dispatch:
+    branches: [ main ]
+    paths: [ 'infra/**' ]
 
 permissions:
   id-token: write
@@ -29,28 +20,25 @@ permissions:
   pull-requests: write
 
 env:
-  AZURE_SUBSCRIPTION_ID: '7110ec71-4118-4bf0-90cd-62338b906c8b'
-  AZURE_RESOURCE_GROUP:  'rg-sbm-dev-cin'
-  AZURE_LOCATION:        'centralindia'
-  BICEP_MAIN:            'infra/main.bicep'
-  BICEP_PARAMS:          'infra/parameters/dev.bicepparam'
-  DEPLOYMENT_NAME:       'gh-sbm-infra-dev'
+  ENVIRONMENT:    dev
+  LOCATION:       centralindia
+  REGION_SHORT:   cin
+  PROJECT_NAME:   sbm
+  RESOURCE_GROUP: rg-sbm-dev-cin
+  BICEP_MAIN:     infra/main.bicep
+  PARAM_FILE:     infra/parameters/dev.bicepparam
 
 jobs:
-
-# ============================================================
-# JOB 1 — PR Validation (runs on every PR — lint + what-if)
-# ============================================================
+  # ── Job 1: Bicep Lint + What-If (runs on every PR) ──────────
   validate:
-    name: 'Bicep Lint and What-If Preview'
+    name: Bicep Lint and What-If Preview
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Azure Login — Workload Identity Federation
+      - name: Azure Login (OIDC)
         uses: azure/login@v2
         with:
           client-id:       ${{ secrets.AZURE_CLIENT_ID }}
@@ -62,49 +50,37 @@ jobs:
           az bicep install
           az bicep version
 
-      - name: Bicep Lint — check for errors and warnings
+      - name: Bicep Lint
         run: |
-          echo "Running Bicep lint..."
+          echo "Running bicep lint..."
           az bicep lint --file ${{ env.BICEP_MAIN }}
           echo "Lint passed."
 
-      - name: Bicep Build — compile to ARM (dry run)
+      - name: Bicep Build (compile check)
         run: |
           az bicep build --file ${{ env.BICEP_MAIN }} --outfile compiled-arm.json
           echo "Bicep compiled successfully."
 
-      - name: Create Resource Group if not exists
+      - name: What-If Preview
         run: |
           az group create \
-            --name ${{ env.AZURE_RESOURCE_GROUP }} \
-            --location ${{ env.AZURE_LOCATION }} \
-            --tags Project=sbm Environment=dev Owner=damco-infra-team \
-                   ManagedBy=damco Client=seaboard-marine \
-                   CostCenter=sbm-dev-2026 DeployedBy=github-actions \
-            2>/dev/null || true
+            --name ${{ env.RESOURCE_GROUP }} \
+            --location ${{ env.LOCATION }} \
+            --tags Project=${{ env.PROJECT_NAME }} Environment=${{ env.ENVIRONMENT }} \
+                   Owner=damco-infra-team ManagedBy=damco \
+                   Client=seaboard-marine DeployedBy=github-actions 2>/dev/null || true
 
-      - name: What-If — preview all resource changes
-        run: |
-          echo "Running What-If analysis..."
+          echo "Running What-If — check output before approving PR..."
           az deployment group what-if \
-            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
-            --template-file  ${{ env.BICEP_MAIN }} \
-            --parameters     ${{ env.BICEP_PARAMS }} \
-            --parameters     environment=dev \
-                             projectName=sbm \
-                             regionShort=cin \
-                             sqlAdminPassword='placeholder-whatif' \
-            --result-format  FullResourcePayloads
-
-      - name: Upload compiled ARM as artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: arm-compiled-${{ github.run_id }}
-          path: compiled-arm.json
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --template-file ${{ env.BICEP_MAIN }} \
+            --parameters ${{ env.PARAM_FILE }} \
+            --parameters sqlAdminPassword='placeholder-whatif' \
+            --result-format FullResourcePayloads
 
       - name: Comment What-If result on PR
-        if: github.event_name == 'pull_request'
         uses: actions/github-script@v7
+        if: always()
         with:
           script: |
             github.rest.issues.createComment({
@@ -114,22 +90,23 @@ jobs:
               body: '✅ **Bicep lint passed** and **What-If analysis completed** successfully.\n\nPlease review the What-If output in the Actions logs before approving this PR.'
             })
 
-# ============================================================
-# JOB 2 — Deploy (runs only on merge to main OR manual trigger)
-# ============================================================
+      - name: Upload compiled ARM
+        uses: actions/upload-artifact@v4
+        with:
+          name: arm-compiled-${{ github.run_id }}
+          path: compiled-arm.json
+
+  # ── Job 2: Deploy to Dev (runs only on merge to main) ───────
   deploy:
-    name: 'Deploy to rg-sbm-dev-cin (Damco subscription)'
+    name: Deploy to rg-sbm-dev-cin (Damco subscription)
     runs-on: ubuntu-latest
-    if: |
-      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
-      github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     environment: dev
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Azure Login — Workload Identity Federation
+      - name: Azure Login (OIDC)
         uses: azure/login@v2
         with:
           client-id:       ${{ secrets.AZURE_CLIENT_ID }}
@@ -144,95 +121,59 @@ jobs:
       - name: Create Resource Group
         run: |
           az group create \
-            --name ${{ env.AZURE_RESOURCE_GROUP }} \
-            --location ${{ env.AZURE_LOCATION }} \
-            --tags Project=sbm Environment=dev \
+            --name ${{ env.RESOURCE_GROUP }} \
+            --location ${{ env.LOCATION }} \
+            --tags Project=${{ env.PROJECT_NAME }} Environment=${{ env.ENVIRONMENT }} \
                    Owner=damco-infra-team ManagedBy=damco \
-                   Client=seaboard-marine CostCenter=sbm-dev-2026 \
-                   DeployedBy=github-actions BuildId=${{ github.run_id }}
-          echo "Resource group ready: ${{ env.AZURE_RESOURCE_GROUP }}"
+                   Client=seaboard-marine DeployedBy=github-actions \
+                   BuildId=${{ github.run_id }}
+          echo "Resource group ready: ${{ env.RESOURCE_GROUP }}"
 
-      - name: Fetch SQL password from Azure Key Vault
+      - name: Deploy Bicep
         run: |
-          SQL_PASSWORD=$(az keyvault secret show \
-            --vault-name kv-sbm-pipeline-cin \
-            --name sbm-sql-admin-password \
-            --query value -o tsv)
-          echo "::add-mask::$SQL_PASSWORD"
-          echo "SQL_PASSWORD=$SQL_PASSWORD" >> $GITHUB_ENV
-
-      - name: Deploy all Bicep modules
-        run: |
-          echo "Starting Bicep deployment to ${{ env.AZURE_RESOURCE_GROUP }}..."
+          echo "Starting deployment to ${{ env.RESOURCE_GROUP }}..."
           az deployment group create \
-            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
-            --template-file  ${{ env.BICEP_MAIN }} \
-            --parameters     ${{ env.BICEP_PARAMS }} \
-            --parameters     environment=dev \
-                             projectName=sbm \
-                             regionShort=cin \
-                             sqlAdminPassword="${{ env.SQL_PASSWORD }}" \
-            --name           ${{ env.DEPLOYMENT_NAME }}-${{ github.run_id }} \
-            --mode           Incremental
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --template-file ${{ env.BICEP_MAIN }} \
+            --parameters ${{ env.PARAM_FILE }} \
+            --parameters sqlAdminPassword='${{ secrets.SQL_ADMIN_PASSWORD }}' \
+            --name "deploy-sbm-dev-${{ github.run_id }}" \
+            --mode Incremental
           echo "Deployment complete."
 
-      - name: Print deployment outputs
+      - name: Print Deployment Outputs
         run: |
           echo "=== Deployment Outputs ==="
           az deployment group show \
-            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
-            --name ${{ env.DEPLOYMENT_NAME }}-${{ github.run_id }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --name "deploy-sbm-dev-${{ github.run_id }}" \
             --query properties.outputs \
             -o table
 
-      - name: Apply Damco tags to all resources
-        run: |
-          echo "Applying Damco tags to all resources..."
-          RESOURCE_IDS=$(az resource list \
-            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
-            --query "[].id" -o tsv)
-          for id in $RESOURCE_IDS; do
-            az tag update \
-              --resource-id "$id" \
-              --operation merge \
-              --tags Project=sbm Environment=dev \
-                     Owner=damco-infra-team ManagedBy=damco \
-                     Client=seaboard-marine CostCenter=sbm-dev-2026 \
-                     DeployedBy=github-actions BuildId=${{ github.run_id }}
-          done
-          echo "All resources tagged."
-
-      - name: Smoke test — verify all key resources exist
+      - name: Smoke Test
         run: |
           echo "Running smoke tests..."
           PASS=0; FAIL=0
+          BASE="${{ env.PROJECT_NAME }}-${{ env.ENVIRONMENT }}-${{ env.REGION_SHORT }}"
+
           check() {
-            RESULT=$(az resource list \
-              --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
-              --resource-type "$2" \
-              --query "[?name=='$1'].name" -o tsv)
-            if [ -z "$RESULT" ]; then
-              echo "  FAIL: $1 not found"
-              FAIL=$((FAIL+1))
-            else
-              echo "  PASS: $1"
-              PASS=$((PASS+1))
-            fi
+            RESULT=$(az resource list --resource-group ${{ env.RESOURCE_GROUP }} \
+              --resource-type "$2" --query "[?name=='$1'].name" -o tsv)
+            if [ -z "$RESULT" ]; then echo "  FAIL: $1"; FAIL=$((FAIL+1))
+            else echo "  PASS: $1"; PASS=$((PASS+1)); fi
           }
-          check "vnet-sbm-dev-cin"     "Microsoft.Network/virtualNetworks"
-          check "kv-sbm-dev-cin"       "Microsoft.KeyVault/vaults"
-          check "log-sbm-dev-cin"      "Microsoft.OperationalInsights/workspaces"
-          check "asp-sbm-dev-cin"      "Microsoft.Web/serverfarms"
-          check "app-sbm-dev-cin-fe"   "Microsoft.Web/sites"
-          check "app-sbm-dev-cin-be"   "Microsoft.Web/sites"
-          check "func-sbm-dev-cin-evb" "Microsoft.Web/sites"
-          check "sql-sbm-dev-cin"      "Microsoft.Sql/servers"
-          check "redis-sbm-dev-cin"    "Microsoft.Cache/redis"
-          check "evhns-sbm-dev-cin"    "Microsoft.EventHub/namespaces"
-          echo ""
+
+          check "vnet-${BASE}"     "Microsoft.Network/virtualNetworks"
+          check "kv-${BASE}"       "Microsoft.KeyVault/vaults"
+          check "log-${BASE}"      "Microsoft.OperationalInsights/workspaces"
+          check "asp-${BASE}"      "Microsoft.Web/serverfarms"
+          check "app-${BASE}-fe"   "Microsoft.Web/sites"
+          check "app-${BASE}-be"   "Microsoft.Web/sites"
+          check "func-${BASE}-evb" "Microsoft.Web/sites"
+          check "sql-${BASE}"      "Microsoft.Sql/servers"
+          check "redis-${BASE}"    "Microsoft.Cache/redis"
+          check "evhns-${BASE}"    "Microsoft.EventHub/namespaces"
+
           echo "Results: $PASS passed, $FAIL failed"
-          if [ $FAIL -gt 0 ]; then
-            echo "Smoke tests FAILED."
-            exit 1
-          fi
+          [ $FAIL -gt 0 ] && echo "Smoke tests FAILED." && exit 1
           echo "All smoke tests passed."
