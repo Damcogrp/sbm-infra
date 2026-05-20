@@ -1,5 +1,5 @@
 // ============================================================
-// parameters/dev.bicepparam
+// parameters/prod.bicepparam
 // DO NOT EDIT — all values are driven from infra/config.yml
 // ============================================================
 
@@ -7,10 +7,10 @@ using '../main.bicep'
 
 // ── Read everything from config.yml ──────────────────────────
 var cfg = loadYamlContent('../config.yml')
-var env = cfg.environments.dev
+var env = cfg.environments.prod
 var prj = cfg.project
 
-param environment            = 'dev'
+param environment            = 'prod'
 param projectName            = prj.name
 param location               = env.location
 param regionShort            = env.region_short
