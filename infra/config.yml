@@ -24,12 +24,12 @@ environments:
   dev:
     # Azure Region
     location: centralindia         # Azure region name. e.g. eastus, westeurope, centralindia
-    region_short: cad              # Short code for region. Used in resource names. e.g. eus, weu, cin
+    region_short: cin              # Short code for region. Used in resource names. e.g. eus, weu, cin
 
     # Feature Flags — what gets deployed in this environment
     deploy_app_gateway: false      # Application Gateway (WAF v2). Keep false for dev.
     deploy_apim: false             # Azure API Management. Keep false for dev.
-    deploy_nat_gateway: true      # NAT Gateway (static IP for on-prem DB2). Keep false for dev.
+    deploy_nat_gateway: false      # NAT Gateway (static IP for on-prem DB2). Keep false for dev.
 
     # Network — IP ranges. Must not clash with other environments or existing networks.
     network:
