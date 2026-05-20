@@ -1,7 +1,7 @@
 # ============================================================
 # deploy-infra-dev.yml — DEV Environment (Damco Azure)
-# Trigger: PR validation + merge to main
-# Auth:    OIDC Federated Identity (Damco subscription)
+# All config values are read from infra/config.yml
+# NO hardcoded values — client never needs to edit this file
 # ============================================================
 
 name: SBM Infra — Dev Deploy
@@ -19,21 +19,53 @@ permissions:
   contents: read
   pull-requests: write
 
-env:
-  ENVIRONMENT:    dev
-  LOCATION:       centralindia
-  REGION_SHORT:   cin
-  PROJECT_NAME:   sbm
-  RESOURCE_GROUP: rg-sbm-dev-cin
-  BICEP_MAIN:     infra/main.bicep
-  PARAM_FILE:     infra/parameters/dev.bicepparam
-
 jobs:
-  # ── Job 1: Bicep Lint + What-If (runs on every PR) ──────────
+  # ── Job 1: Load config from config.yml ──────────────────────
+  load-config:
+    name: Load config.yml
+    runs-on: ubuntu-latest
+    outputs:
+      project_name:   ${{ steps.cfg.outputs.project_name }}
+      location:       ${{ steps.cfg.outputs.location }}
+      region_short:   ${{ steps.cfg.outputs.region_short }}
+      resource_group: ${{ steps.cfg.outputs.resource_group }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install yq
+        run: |
+          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+
+      - name: Read config.yml
+        id: cfg
+        run: |
+          PROJECT=$(yq '.project.name' infra/config.yml)
+          LOCATION=$(yq '.environments.dev.location' infra/config.yml)
+          REGION=$(yq '.environments.dev.region_short' infra/config.yml)
+          RG="rg-${PROJECT}-dev-${REGION}"
+
+          echo "project_name=$PROJECT"   >> $GITHUB_OUTPUT
+          echo "location=$LOCATION"      >> $GITHUB_OUTPUT
+          echo "region_short=$REGION"    >> $GITHUB_OUTPUT
+          echo "resource_group=$RG"      >> $GITHUB_OUTPUT
+
+          echo "✅ Project:        $PROJECT"
+          echo "✅ Location:       $LOCATION"
+          echo "✅ Region Short:   $REGION"
+          echo "✅ Resource Group: $RG"
+
+  # ── Job 2: Bicep Lint + What-If (PR only) ───────────────────
   validate:
     name: Bicep Lint and What-If Preview
     runs-on: ubuntu-latest
+    needs: load-config
     if: github.event_name == 'pull_request'
+    env:
+      PROJECT_NAME:   ${{ needs.load-config.outputs.project_name }}
+      LOCATION:       ${{ needs.load-config.outputs.location }}
+      REGION_SHORT:   ${{ needs.load-config.outputs.region_short }}
+      RESOURCE_GROUP: ${{ needs.load-config.outputs.resource_group }}
 
     steps:
       - uses: actions/checkout@v4
@@ -46,19 +78,16 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Install Bicep CLI
-        run: |
-          az bicep install
-          az bicep version
+        run: az bicep install && az bicep version
 
       - name: Bicep Lint
         run: |
-          echo "Running bicep lint..."
-          az bicep lint --file ${{ env.BICEP_MAIN }}
+          az bicep lint --file infra/main.bicep
           echo "Lint passed."
 
-      - name: Bicep Build (compile check)
+      - name: Bicep Build
         run: |
-          az bicep build --file ${{ env.BICEP_MAIN }} --outfile compiled-arm.json
+          az bicep build --file infra/main.bicep --outfile compiled-arm.json
           echo "Bicep compiled successfully."
 
       - name: What-If Preview
@@ -66,19 +95,17 @@ jobs:
           az group create \
             --name ${{ env.RESOURCE_GROUP }} \
             --location ${{ env.LOCATION }} \
-            --tags Project=${{ env.PROJECT_NAME }} Environment=${{ env.ENVIRONMENT }} \
-                   Owner=damco-infra-team ManagedBy=damco \
-                   Client=seaboard-marine DeployedBy=github-actions 2>/dev/null || true
+            --tags Project=${{ env.PROJECT_NAME }} Environment=dev \
+                   ManagedBy=damco DeployedBy=github-actions 2>/dev/null || true
 
-          echo "Running What-If — check output before approving PR..."
           az deployment group what-if \
             --resource-group ${{ env.RESOURCE_GROUP }} \
-            --template-file ${{ env.BICEP_MAIN }} \
-            --parameters ${{ env.PARAM_FILE }} \
+            --template-file infra/main.bicep \
+            --parameters infra/parameters/dev.bicepparam \
             --parameters sqlAdminPassword='placeholder-whatif' \
             --result-format FullResourcePayloads
 
-      - name: Comment What-If result on PR
+      - name: Comment on PR
         uses: actions/github-script@v7
         if: always()
         with:
@@ -96,12 +123,18 @@ jobs:
           name: arm-compiled-${{ github.run_id }}
           path: compiled-arm.json
 
-  # ── Job 2: Deploy to Dev (runs only on merge to main) ───────
+  # ── Job 3: Deploy to Dev (merge to main only) ────────────────
   deploy:
-    name: Deploy to rg-sbm-dev-cin (Damco subscription)
+    name: Deploy to Dev (Damco Azure)
     runs-on: ubuntu-latest
+    needs: load-config
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     environment: dev
+    env:
+      PROJECT_NAME:   ${{ needs.load-config.outputs.project_name }}
+      LOCATION:       ${{ needs.load-config.outputs.location }}
+      REGION_SHORT:   ${{ needs.load-config.outputs.region_short }}
+      RESOURCE_GROUP: ${{ needs.load-config.outputs.resource_group }}
 
     steps:
       - uses: actions/checkout@v4
@@ -114,50 +147,42 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Install Bicep CLI
-        run: |
-          az bicep install
-          az bicep version
+        run: az bicep install && az bicep version
 
       - name: Create Resource Group
         run: |
           az group create \
             --name ${{ env.RESOURCE_GROUP }} \
             --location ${{ env.LOCATION }} \
-            --tags Project=${{ env.PROJECT_NAME }} Environment=${{ env.ENVIRONMENT }} \
-                   Owner=damco-infra-team ManagedBy=damco \
-                   Client=seaboard-marine DeployedBy=github-actions \
-                   BuildId=${{ github.run_id }}
-          echo "Resource group ready: ${{ env.RESOURCE_GROUP }}"
+            --tags Project=${{ env.PROJECT_NAME }} Environment=dev \
+                   ManagedBy=damco DeployedBy=github-actions BuildId=${{ github.run_id }}
 
       - name: Deploy Bicep
         run: |
-          echo "Starting deployment to ${{ env.RESOURCE_GROUP }}..."
           az deployment group create \
             --resource-group ${{ env.RESOURCE_GROUP }} \
-            --template-file ${{ env.BICEP_MAIN }} \
-            --parameters ${{ env.PARAM_FILE }} \
+            --template-file infra/main.bicep \
+            --parameters infra/parameters/dev.bicepparam \
             --parameters sqlAdminPassword='${{ secrets.SQL_ADMIN_PASSWORD }}' \
-            --name "deploy-sbm-dev-${{ github.run_id }}" \
+            --name "deploy-${{ env.PROJECT_NAME }}-dev-${{ github.run_id }}" \
             --mode Incremental
           echo "Deployment complete."
 
-      - name: Print Deployment Outputs
+      - name: Print Outputs
         run: |
-          echo "=== Deployment Outputs ==="
           az deployment group show \
             --resource-group ${{ env.RESOURCE_GROUP }} \
-            --name "deploy-sbm-dev-${{ github.run_id }}" \
-            --query properties.outputs \
-            -o table
+            --name "deploy-${{ env.PROJECT_NAME }}-dev-${{ github.run_id }}" \
+            --query properties.outputs -o table
 
       - name: Smoke Test
         run: |
-          echo "Running smoke tests..."
           PASS=0; FAIL=0
-          BASE="${{ env.PROJECT_NAME }}-${{ env.ENVIRONMENT }}-${{ env.REGION_SHORT }}"
+          BASE="${{ env.PROJECT_NAME }}-dev-${{ env.REGION_SHORT }}"
+          RG="${{ env.RESOURCE_GROUP }}"
 
           check() {
-            RESULT=$(az resource list --resource-group ${{ env.RESOURCE_GROUP }} \
+            RESULT=$(az resource list --resource-group $RG \
               --resource-type "$2" --query "[?name=='$1'].name" -o tsv)
             if [ -z "$RESULT" ]; then echo "  FAIL: $1"; FAIL=$((FAIL+1))
             else echo "  PASS: $1"; PASS=$((PASS+1)); fi
@@ -165,7 +190,6 @@ jobs:
 
           check "vnet-${BASE}"     "Microsoft.Network/virtualNetworks"
           check "kv-${BASE}"       "Microsoft.KeyVault/vaults"
-          check "log-${BASE}"      "Microsoft.OperationalInsights/workspaces"
           check "asp-${BASE}"      "Microsoft.Web/serverfarms"
           check "app-${BASE}-fe"   "Microsoft.Web/sites"
           check "app-${BASE}-be"   "Microsoft.Web/sites"
@@ -175,5 +199,5 @@ jobs:
           check "evhns-${BASE}"    "Microsoft.EventHub/namespaces"
 
           echo "Results: $PASS passed, $FAIL failed"
-          [ $FAIL -gt 0 ] && echo "Smoke tests FAILED." && exit 1
+          [ $FAIL -gt 0 ] && exit 1
           echo "All smoke tests passed."

@@ -1,18 +1,7 @@
 # ============================================================
 # deploy-infra-prod.yml — PROD Environment (Client Azure)
-# Trigger: Manual only — Production deployments are always manual
-# Auth:    OIDC Federated Identity (Client prod subscription)
-#
-# BEFORE FIRST RUN — Add these GitHub secrets:
-#   AZURE_CLIENT_ID_PROD       → from client's prod app registration
-#   AZURE_TENANT_ID_PROD       → client's Azure tenant ID
-#   AZURE_SUBSCRIPTION_ID_PROD → client's prod subscription ID
-#   SQL_ADMIN_PASSWORD_PROD    → strong password for Prod SQL
-#
-# BEFORE FIRST RUN — Create GitHub Environment:
-#   Name: prod
-#   Required reviewers: himanshua121 + Mrugesh + client approver
-#   Wait timer: 5 minutes (cooling off period)
+# All config values are read from infra/config.yml
+# NO hardcoded values — client never needs to edit this file
 # ============================================================
 
 name: SBM Infra — Prod Deploy
@@ -25,7 +14,7 @@ on:
         required: true
         type: string
       change_ticket:
-        description: 'Change ticket / approval reference number'
+        description: 'Change approval ticket number'
         required: true
         type: string
 
@@ -33,37 +22,69 @@ permissions:
   id-token: write
   contents: read
 
-env:
-  ENVIRONMENT:    prod
-  LOCATION:       centralindia
-  REGION_SHORT:   cin
-  PROJECT_NAME:   sbm
-  RESOURCE_GROUP: rg-sbm-prod-cin
-  BICEP_MAIN:     infra/main.bicep
-  PARAM_FILE:     infra/parameters/prod.bicepparam
-
 jobs:
-  # ── Guard ────────────────────────────────────────────────────
+  # ── Job 1: Load config from config.yml ──────────────────────
+  load-config:
+    name: Load config.yml
+    runs-on: ubuntu-latest
+    outputs:
+      project_name:   ${{ steps.cfg.outputs.project_name }}
+      location:       ${{ steps.cfg.outputs.location }}
+      region_short:   ${{ steps.cfg.outputs.region_short }}
+      resource_group: ${{ steps.cfg.outputs.resource_group }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install yq
+        run: |
+          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+
+      - name: Read config.yml
+        id: cfg
+        run: |
+          PROJECT=$(yq '.project.name' infra/config.yml)
+          LOCATION=$(yq '.environments.prod.location' infra/config.yml)
+          REGION=$(yq '.environments.prod.region_short' infra/config.yml)
+          RG="rg-${PROJECT}-prod-${REGION}"
+
+          echo "project_name=$PROJECT"   >> $GITHUB_OUTPUT
+          echo "location=$LOCATION"      >> $GITHUB_OUTPUT
+          echo "region_short=$REGION"    >> $GITHUB_OUTPUT
+          echo "resource_group=$RG"      >> $GITHUB_OUTPUT
+
+          echo "✅ Project:        $PROJECT"
+          echo "✅ Location:       $LOCATION"
+          echo "✅ Region Short:   $REGION"
+          echo "✅ Resource Group: $RG"
+
+  # ── Job 2: Confirm intent ────────────────────────────────────
   confirm:
     name: Confirm PROD deployment
     runs-on: ubuntu-latest
+    needs: load-config
     steps:
       - name: Validate confirmation
         run: |
           if [ "${{ github.event.inputs.confirm }}" != "deploy-prod" ]; then
-            echo "ERROR: Must type 'deploy-prod' to confirm. Got: ${{ github.event.inputs.confirm }}"
+            echo "ERROR: Type 'deploy-prod' to confirm. Got: ${{ github.event.inputs.confirm }}"
             exit 1
           fi
-          echo "Change ticket: ${{ github.event.inputs.change_ticket }}"
-          echo "Triggered by: ${{ github.actor }}"
-          echo "Confirmed. Proceeding with PRODUCTION deployment."
+          echo "Change Ticket: ${{ github.event.inputs.change_ticket }}"
+          echo "Triggered by:  ${{ github.actor }}"
+          echo "Confirmed. Deploying to PROD: ${{ needs.load-config.outputs.resource_group }}"
 
-  # ── Validate ─────────────────────────────────────────────────
+  # ── Job 3: What-If Preview ───────────────────────────────────
   validate:
     name: What-If Preview (Client PROD)
     runs-on: ubuntu-latest
-    needs: confirm
+    needs: [load-config, confirm]
     environment: prod
+    env:
+      PROJECT_NAME:   ${{ needs.load-config.outputs.project_name }}
+      LOCATION:       ${{ needs.load-config.outputs.location }}
+      REGION_SHORT:   ${{ needs.load-config.outputs.region_short }}
+      RESOURCE_GROUP: ${{ needs.load-config.outputs.resource_group }}
 
     steps:
       - uses: actions/checkout@v4
@@ -80,7 +101,7 @@ jobs:
 
       - name: Bicep Lint
         run: |
-          az bicep lint --file ${{ env.BICEP_MAIN }}
+          az bicep lint --file infra/main.bicep
           echo "Lint passed."
 
       - name: What-If Preview
@@ -88,24 +109,27 @@ jobs:
           az group create \
             --name ${{ env.RESOURCE_GROUP }} \
             --location ${{ env.LOCATION }} \
-            --tags Project=${{ env.PROJECT_NAME }} Environment=${{ env.ENVIRONMENT }} \
-                   Owner=damco-infra-team ManagedBy=damco \
-                   Client=seaboard-marine DeployedBy=github-actions 2>/dev/null || true
+            --tags Project=${{ env.PROJECT_NAME }} Environment=prod \
+                   ManagedBy=damco DeployedBy=github-actions 2>/dev/null || true
 
-          echo "Running What-If on CLIENT PROD subscription..."
           az deployment group what-if \
             --resource-group ${{ env.RESOURCE_GROUP }} \
-            --template-file ${{ env.BICEP_MAIN }} \
-            --parameters ${{ env.PARAM_FILE }} \
+            --template-file infra/main.bicep \
+            --parameters infra/parameters/prod.bicepparam \
             --parameters sqlAdminPassword='placeholder-whatif' \
             --result-format FullResourcePayloads
 
-  # ── Deploy ───────────────────────────────────────────────────
+  # ── Job 4: Deploy to Client PROD ─────────────────────────────
   deploy:
-    name: Deploy to rg-sbm-prod-cin (Client PROD subscription)
+    name: Deploy to PROD (Client Azure)
     runs-on: ubuntu-latest
-    needs: validate
+    needs: [load-config, validate]
     environment: prod
+    env:
+      PROJECT_NAME:   ${{ needs.load-config.outputs.project_name }}
+      LOCATION:       ${{ needs.load-config.outputs.location }}
+      REGION_SHORT:   ${{ needs.load-config.outputs.region_short }}
+      RESOURCE_GROUP: ${{ needs.load-config.outputs.resource_group }}
 
     steps:
       - uses: actions/checkout@v4
@@ -125,43 +149,40 @@ jobs:
           az group create \
             --name ${{ env.RESOURCE_GROUP }} \
             --location ${{ env.LOCATION }} \
-            --tags Project=${{ env.PROJECT_NAME }} Environment=${{ env.ENVIRONMENT }} \
-                   Owner=damco-infra-team ManagedBy=damco \
-                   Client=seaboard-marine DeployedBy=github-actions \
+            --tags Project=${{ env.PROJECT_NAME }} Environment=prod \
+                   ManagedBy=damco DeployedBy=github-actions \
                    ChangeTicket=${{ github.event.inputs.change_ticket }} \
                    BuildId=${{ github.run_id }}
 
       - name: Deploy Bicep
         run: |
-          echo "Starting PRODUCTION deployment to client subscription..."
           az deployment group create \
             --resource-group ${{ env.RESOURCE_GROUP }} \
-            --template-file ${{ env.BICEP_MAIN }} \
-            --parameters ${{ env.PARAM_FILE }} \
+            --template-file infra/main.bicep \
+            --parameters infra/parameters/prod.bicepparam \
             --parameters sqlAdminPassword='${{ secrets.SQL_ADMIN_PASSWORD_PROD }}' \
-            --name "deploy-sbm-prod-${{ github.run_id }}" \
+            --name "deploy-${{ env.PROJECT_NAME }}-prod-${{ github.run_id }}" \
             --mode Incremental
-          echo "PRODUCTION Deployment complete."
+          echo "PROD Deployment complete."
 
-      - name: Print Deployment Outputs (incl. Static IP)
+      - name: Print Outputs (incl. Static IP + AppGW IP)
         run: |
           echo "=== PROD Deployment Outputs ==="
           az deployment group show \
             --resource-group ${{ env.RESOURCE_GROUP }} \
-            --name "deploy-sbm-prod-${{ github.run_id }}" \
-            --query properties.outputs \
-            -o table
+            --name "deploy-${{ env.PROJECT_NAME }}-prod-${{ github.run_id }}" \
+            --query properties.outputs -o table
           echo ""
-          echo "IMPORTANT: Share the 'staticOutboundIp' and 'appGatewayPublicIp' with the client for firewall whitelisting."
+          echo "IMPORTANT: Share staticOutboundIp and appGatewayPublicIp with client for firewall whitelisting."
 
       - name: Smoke Test
         run: |
-          echo "Running PROD smoke tests..."
           PASS=0; FAIL=0
-          BASE="${{ env.PROJECT_NAME }}-${{ env.ENVIRONMENT }}-${{ env.REGION_SHORT }}"
+          BASE="${{ env.PROJECT_NAME }}-prod-${{ env.REGION_SHORT }}"
+          RG="${{ env.RESOURCE_GROUP }}"
 
           check() {
-            RESULT=$(az resource list --resource-group ${{ env.RESOURCE_GROUP }} \
+            RESULT=$(az resource list --resource-group $RG \
               --resource-type "$2" --query "[?name=='$1'].name" -o tsv)
             if [ -z "$RESULT" ]; then echo "  FAIL: $1"; FAIL=$((FAIL+1))
             else echo "  PASS: $1"; PASS=$((PASS+1)); fi
@@ -181,5 +202,5 @@ jobs:
           check "natgw-${BASE}"    "Microsoft.Network/natGateways"
 
           echo "Results: $PASS passed, $FAIL failed"
-          [ $FAIL -gt 0 ] && echo "PROD smoke tests FAILED — investigate immediately." && exit 1
+          [ $FAIL -gt 0 ] && echo "PROD smoke tests FAILED." && exit 1
           echo "All PROD smoke tests passed."
