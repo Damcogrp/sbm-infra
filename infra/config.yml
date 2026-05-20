@@ -24,7 +24,7 @@ environments:
   dev:
     # Azure Region
     location: centralindia         # Azure region name. e.g. eastus, westeurope, centralindia
-    region_short: cad              # Short code for region. Used in resource names. e.g. eus, weu, cin
+    region_short: cin              # Short code for region. Used in resource names. e.g. eus, weu, cin
 
     # Feature Flags — what gets deployed in this environment
     deploy_app_gateway: false      # Application Gateway (WAF v2). Keep false for dev.
