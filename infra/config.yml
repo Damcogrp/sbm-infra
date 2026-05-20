@@ -29,7 +29,7 @@ environments:
     # Feature Flags — what gets deployed in this environment
     deploy_app_gateway: false      # Application Gateway (WAF v2). Keep false for dev.
     deploy_apim: false             # Azure API Management. Keep false for dev.
-    deploy_nat_gateway: false      # NAT Gateway (static IP for on-prem DB2). Keep false for dev.
+    deploy_nat_gateway: true      # NAT Gateway (static IP for on-prem DB2). Keep false for dev.
 
     # Network — IP ranges. Must not clash with other environments or existing networks.
     network:
