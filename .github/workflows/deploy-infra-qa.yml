@@ -1,0 +1,176 @@
+# ============================================================
+# deploy-infra-qa.yml — QA Environment (Client Azure)
+# Trigger: Manual only (workflow_dispatch) — QA is client infra
+# Auth:    OIDC Federated Identity (Client subscription)
+#
+# BEFORE FIRST RUN — Add these GitHub secrets:
+#   AZURE_CLIENT_ID_QA       → from client's app registration
+#   AZURE_TENANT_ID_QA       → client's Azure tenant ID
+#   AZURE_SUBSCRIPTION_ID_QA → client's subscription ID
+#   SQL_ADMIN_PASSWORD_QA    → strong password for QA SQL
+#
+# BEFORE FIRST RUN — Create GitHub Environment:
+#   Name: qa
+#   Required reviewers: himanshua121 + one from client team
+# ============================================================
+
+name: SBM Infra — QA Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "deploy-qa" to confirm deployment to client QA environment'
+        required: true
+        type: string
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  ENVIRONMENT:    qa
+  LOCATION:       centralindia
+  REGION_SHORT:   cin
+  PROJECT_NAME:   sbm
+  RESOURCE_GROUP: rg-sbm-qa-cin
+  BICEP_MAIN:     infra/main.bicep
+  PARAM_FILE:     infra/parameters/qa.bicepparam
+
+jobs:
+  # ── Guard: Confirm intent ────────────────────────────────────
+  confirm:
+    name: Confirm deployment intent
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check confirmation input
+        run: |
+          if [ "${{ github.event.inputs.confirm }}" != "deploy-qa" ]; then
+            echo "ERROR: You must type 'deploy-qa' to confirm. Got: ${{ github.event.inputs.confirm }}"
+            exit 1
+          fi
+          echo "Confirmation received. Proceeding with QA deployment."
+
+  # ── Job: What-If Preview ─────────────────────────────────────
+  validate:
+    name: What-If Preview (Client QA)
+    runs-on: ubuntu-latest
+    needs: confirm
+    environment: qa
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure Login — Client QA (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id:       ${{ secrets.AZURE_CLIENT_ID_QA }}
+          tenant-id:       ${{ secrets.AZURE_TENANT_ID_QA }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID_QA }}
+
+      - name: Install Bicep CLI
+        run: az bicep install && az bicep version
+
+      - name: Bicep Lint
+        run: |
+          az bicep lint --file ${{ env.BICEP_MAIN }}
+          echo "Lint passed."
+
+      - name: What-If Preview
+        run: |
+          az group create \
+            --name ${{ env.RESOURCE_GROUP }} \
+            --location ${{ env.LOCATION }} \
+            --tags Project=${{ env.PROJECT_NAME }} Environment=${{ env.ENVIRONMENT }} \
+                   Owner=damco-infra-team ManagedBy=damco \
+                   Client=seaboard-marine DeployedBy=github-actions 2>/dev/null || true
+
+          echo "Running What-If on CLIENT QA subscription..."
+          az deployment group what-if \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --template-file ${{ env.BICEP_MAIN }} \
+            --parameters ${{ env.PARAM_FILE }} \
+            --parameters sqlAdminPassword='placeholder-whatif' \
+            --result-format FullResourcePayloads
+
+  # ── Job: Deploy to Client QA ─────────────────────────────────
+  deploy:
+    name: Deploy to rg-sbm-qa-cin (Client subscription)
+    runs-on: ubuntu-latest
+    needs: validate
+    environment: qa
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure Login — Client QA (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id:       ${{ secrets.AZURE_CLIENT_ID_QA }}
+          tenant-id:       ${{ secrets.AZURE_TENANT_ID_QA }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID_QA }}
+
+      - name: Install Bicep CLI
+        run: az bicep install && az bicep version
+
+      - name: Create Resource Group
+        run: |
+          az group create \
+            --name ${{ env.RESOURCE_GROUP }} \
+            --location ${{ env.LOCATION }} \
+            --tags Project=${{ env.PROJECT_NAME }} Environment=${{ env.ENVIRONMENT }} \
+                   Owner=damco-infra-team ManagedBy=damco \
+                   Client=seaboard-marine DeployedBy=github-actions BuildId=${{ github.run_id }}
+
+      - name: Deploy Bicep
+        run: |
+          echo "Starting QA deployment to client subscription..."
+          az deployment group create \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --template-file ${{ env.BICEP_MAIN }} \
+            --parameters ${{ env.PARAM_FILE }} \
+            --parameters sqlAdminPassword='${{ secrets.SQL_ADMIN_PASSWORD_QA }}' \
+            --name "deploy-sbm-qa-${{ github.run_id }}" \
+            --mode Incremental
+          echo "QA Deployment complete."
+
+      - name: Print Deployment Outputs (incl. Static IP)
+        run: |
+          echo "=== QA Deployment Outputs ==="
+          az deployment group show \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --name "deploy-sbm-qa-${{ github.run_id }}" \
+            --query properties.outputs \
+            -o table
+          echo ""
+          echo "NOTE: Share the 'staticOutboundIp' value above with the client to whitelist in their on-prem firewall."
+
+      - name: Smoke Test
+        run: |
+          echo "Running QA smoke tests..."
+          PASS=0; FAIL=0
+          BASE="${{ env.PROJECT_NAME }}-${{ env.ENVIRONMENT }}-${{ env.REGION_SHORT }}"
+
+          check() {
+            RESULT=$(az resource list --resource-group ${{ env.RESOURCE_GROUP }} \
+              --resource-type "$2" --query "[?name=='$1'].name" -o tsv)
+            if [ -z "$RESULT" ]; then echo "  FAIL: $1"; FAIL=$((FAIL+1))
+            else echo "  PASS: $1"; PASS=$((PASS+1)); fi
+          }
+
+          check "vnet-${BASE}"     "Microsoft.Network/virtualNetworks"
+          check "kv-${BASE}"       "Microsoft.KeyVault/vaults"
+          check "asp-${BASE}"      "Microsoft.Web/serverfarms"
+          check "app-${BASE}-fe"   "Microsoft.Web/sites"
+          check "app-${BASE}-be"   "Microsoft.Web/sites"
+          check "func-${BASE}-evb" "Microsoft.Web/sites"
+          check "sql-${BASE}"      "Microsoft.Sql/servers"
+          check "redis-${BASE}"    "Microsoft.Cache/redis"
+          check "evhns-${BASE}"    "Microsoft.EventHub/namespaces"
+          check "agw-${BASE}"      "Microsoft.Network/applicationGateways"
+          check "apim-${BASE}"     "Microsoft.ApiManagement/service"
+          check "natgw-${BASE}"    "Microsoft.Network/natGateways"
+
+          echo "Results: $PASS passed, $FAIL failed"
+          [ $FAIL -gt 0 ] && exit 1
+          echo "All QA smoke tests passed."
