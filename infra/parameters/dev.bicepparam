@@ -26,6 +26,7 @@ param appServicePlanTier     = env.app_service.tier
 
 // ── Database ──────────────────────────────────────────────────
 param sqlAdminLogin          = env.sql.admin_login
+param sqlAdminPassword       = ''
 param sqlDatabaseSku         = env.sql.database_sku
 
 // ── Redis ─────────────────────────────────────────────────────
