@@ -1,64 +1,55 @@
 // ============================================================
 // parameters/qa.bicepparam
-// Environment: QA
-// Azure:       CLIENT subscription
-// AppGW:       true  (WAF v2 enabled)
-// APIM:        true  (Developer tier)
-// NatGateway:  true  (static IP for on-prem DB2 access)
-//
-// CLIENT SETUP CHECKLIST:
-// Before running this pipeline the client must:
-// 1. Add GitHub secret: AZURE_CLIENT_ID_QA
-// 2. Add GitHub secret: AZURE_TENANT_ID_QA
-// 3. Add GitHub secret: AZURE_SUBSCRIPTION_ID_QA
-// 4. Add GitHub secret: SQL_ADMIN_PASSWORD_QA
-// 5. Update location below to match client's preferred region
-// 6. Update vnetAddressPrefix to avoid clash with client's network
+// DO NOT EDIT — all values are driven from infra/config.yml
 // ============================================================
 
 using '../main.bicep'
 
+// ── Read everything from config.yml ──────────────────────────
+var cfg = loadYamlContent('../config.yml')
+var env = cfg.environments.qa
+var prj = cfg.project
+
 param environment            = 'qa'
-param projectName            = 'sbm'
-param location               = 'centralindia'     // TODO: update to client's region
-param regionShort            = 'cin'              // TODO: update to match location
+param projectName            = prj.name
+param location               = env.location
+param regionShort            = env.region_short
 
 // ── Feature Flags ─────────────────────────────────────────────
-param deployAppGateway       = true
-param deployApim             = true
-param deployNatGateway       = true
+param deployAppGateway       = env.deploy_app_gateway
+param deployApim             = env.deploy_apim
+param deployNatGateway       = env.deploy_nat_gateway
 
 // ── Compute ───────────────────────────────────────────────────
-param appServicePlanSku      = 'P1v3'
-param appServicePlanTier     = 'PremiumV3'
+param appServicePlanSku      = env.app_service.sku
+param appServicePlanTier     = env.app_service.tier
 
 // ── Database ──────────────────────────────────────────────────
-param sqlAdminLogin          = 'sbmadmin'
-param sqlDatabaseSku         = 'S2'
+param sqlAdminLogin          = env.sql.admin_login
+param sqlDatabaseSku         = env.sql.database_sku
 
 // ── Redis ─────────────────────────────────────────────────────
-param redisSkuName           = 'Standard'
-param redisCacheFamily       = 'C'
-param redisCacheCapacity     = 2
+param redisSkuName           = env.redis.sku
+param redisCacheFamily       = env.redis.family
+param redisCacheCapacity     = env.redis.capacity
 
 // ── Event Hub ─────────────────────────────────────────────────
-param eventHubThroughputUnits      = 2
-param eventHubPartitionCount       = 4
-param eventHubMessageRetentionDays = 7
+param eventHubThroughputUnits      = env.eventhub.throughput_units
+param eventHubPartitionCount       = env.eventhub.partition_count
+param eventHubMessageRetentionDays = env.eventhub.retention_days
 
 // ── Storage ───────────────────────────────────────────────────
-param storageAccountSku      = 'Standard_GRS'
+param storageAccountSku      = env.storage.sku
 
 // ── Monitoring ────────────────────────────────────────────────
-param logAnalyticsRetentionDays = 60
+param logAnalyticsRetentionDays = env.monitoring.log_retention_days
 
 // ── Network ───────────────────────────────────────────────────
-// TODO: Confirm these ranges do not clash with client's existing network
-param vnetAddressPrefix      = '10.3.0.0/16'
-param appSubnetPrefix        = '10.3.1.0/24'
-param dataSubnetPrefix       = '10.3.2.0/24'
-param gwSubnetPrefix         = '10.3.3.0/24'
+param vnetAddressPrefix      = env.network.vnet_prefix
+param appSubnetPrefix        = env.network.app_subnet
+param dataSubnetPrefix       = env.network.data_subnet
+param gwSubnetPrefix         = env.network.gw_subnet
 
 // ── APIM ──────────────────────────────────────────────────────
-param apimPublisherEmail     = 'infra@damcogroup.com'
-param apimPublisherName      = 'Damco Solutions'
+param apimPublisherEmail     = prj.apim_publisher_email
+param apimPublisherName      = prj.apim_publisher_name
