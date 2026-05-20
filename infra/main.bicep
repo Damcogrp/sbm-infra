@@ -46,7 +46,7 @@ param sqlAdminLogin string = 'sbmadmin'
 
 @description('SQL admin password — injected by pipeline from Key Vault / GitHub Secret')
 @secure()
-param sqlAdminPassword string
+param sqlAdminPassword string = ''
 
 @description('SQL Database SKU')
 param sqlDatabaseSku string = 'S1'
