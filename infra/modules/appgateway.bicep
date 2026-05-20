@@ -1,10 +1,12 @@
 // ============================================================
 // modules/appgateway.bicep
 // Azure Application Gateway — WAF v2, QA and Prod only
-// Acts as reverse proxy + WAF in front of backend App Service
+// Updated: WAF Policy (separate resource) — direct WAF config
+//          on App Gateway was retired by Azure in 2025
 // CAF names:
-//   Public IP:   pip-sbm-{env}-cin-agw
-//   App Gateway: agw-sbm-{env}-cin
+//   Public IP:   pip-sbm-{env}-{region}-agw
+//   WAF Policy:  wafpol-sbm-{env}-{region}
+//   App Gateway: agw-sbm-{env}-{region}
 // ============================================================
 
 param location string
@@ -13,8 +15,9 @@ param gatewaySubnetId string
 param backendFqdn string
 param tags object
 
-var appGwName = 'agw-${base}'
-var pipName   = 'pip-${base}-agw'
+var appGwName  = 'agw-${base}'
+var pipName    = 'pip-${base}-agw'
+var wafPolName = 'wafpol-${base}'
 
 // ── Public IP for App Gateway ─────────────────────────────────
 resource publicIp 'Microsoft.Network/publicIPAddresses@2023-04-01' = {
@@ -25,6 +28,32 @@ resource publicIp 'Microsoft.Network/publicIPAddresses@2023-04-01' = {
   properties: {
     publicIPAllocationMethod: 'Static'
     publicIPAddressVersion: 'IPv4'
+  }
+}
+
+// ── WAF Policy (replaces deprecated inline WAF config) ────────
+resource wafPolicy 'Microsoft.Network/ApplicationGatewayWebApplicationFirewallPolicies@2023-04-01' = {
+  name: wafPolName
+  location: location
+  tags: tags
+  properties: {
+    policySettings: {
+      requestBodyCheck: true
+      maxRequestBodySizeInKb: 128
+      fileUploadLimitInMb: 100
+      state: 'Enabled'
+      mode: 'Prevention'
+    }
+    managedRules: {
+      managedRuleSets: [
+        {
+          ruleSetType: 'OWASP'
+          ruleSetVersion: '3.2'
+        }
+      ]
+      exclusions: []
+    }
+    customRules: []
   }
 }
 
@@ -41,6 +70,9 @@ resource appGateway 'Microsoft.Network/applicationGateways@2023-04-01' = {
     autoscaleConfiguration: {
       minCapacity: 1
       maxCapacity: 3
+    }
+    firewallPolicy: {
+      id: wafPolicy.id
     }
     gatewayIPConfigurations: [
       {
@@ -117,6 +149,9 @@ resource appGateway 'Microsoft.Network/applicationGateways@2023-04-01' = {
             id: resourceId('Microsoft.Network/applicationGateways/frontendPorts', appGwName, 'port-80')
           }
           protocol: 'Http'
+          firewallPolicy: {
+            id: wafPolicy.id
+          }
         }
       }
     ]
@@ -138,13 +173,6 @@ resource appGateway 'Microsoft.Network/applicationGateways@2023-04-01' = {
         }
       }
     ]
-    webApplicationFirewallConfiguration: {
-      enabled: true
-      firewallMode: 'Prevention'
-      ruleSetType: 'OWASP'
-      ruleSetVersion: '3.2'
-      disabledRuleGroups: []
-    }
   }
 }
 
@@ -153,3 +181,5 @@ output appGatewayId string = appGateway.id
 output appGatewayName string = appGateway.name
 output appGatewayPublicIp string = publicIp.properties.ipAddress
 output appGatewayPublicIpName string = publicIp.name
+output wafPolicyId string = wafPolicy.id
+output wafPolicyName string = wafPolicy.name
