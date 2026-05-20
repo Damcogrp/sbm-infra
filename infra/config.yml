@@ -1,0 +1,163 @@
+# ============================================================
+# config.yml — Single Source of Truth
+# ============================================================
+# This is the ONLY file the client needs to change.
+# All workflows, param files, and resource names are driven
+# from values defined here. Do not edit any other file.
+# ============================================================
+
+# ── Project Identity ─────────────────────────────────────────
+project:
+  name: sbm                        # Short project code (2-6 chars). Used in ALL resource names.
+  client_name: seaboard-marine     # Full client name. Used in tags.
+  owner_team: damco-infra-team     # Team responsible for infra. Used in tags.
+  managed_by: damco                # Who manages this infra. Used in tags.
+  apim_publisher_email: infra@damcogroup.com   # APIM publisher contact email.
+  apim_publisher_name: Damco Solutions         # APIM publisher display name.
+
+# ── Environment Configuration ────────────────────────────────
+# Each environment (dev/qa/prod) has its own block.
+# Change values per environment as needed.
+
+environments:
+
+  dev:
+    # Azure Region
+    location: centralindia         # Azure region name. e.g. eastus, westeurope, centralindia
+    region_short: cin              # Short code for region. Used in resource names. e.g. eus, weu, cin
+
+    # Feature Flags — what gets deployed in this environment
+    deploy_app_gateway: false      # Application Gateway (WAF v2). Keep false for dev.
+    deploy_apim: false             # Azure API Management. Keep false for dev.
+    deploy_nat_gateway: false      # NAT Gateway (static IP for on-prem DB2). Keep false for dev.
+
+    # Network — IP ranges. Must not clash with other environments or existing networks.
+    network:
+      vnet_prefix: 10.0.0.0/16
+      app_subnet: 10.0.1.0/24
+      data_subnet: 10.0.2.0/24
+      gw_subnet: 10.0.3.0/24      # Only used if deploy_app_gateway = true
+
+    # Compute
+    app_service:
+      sku: B2                      # App Service Plan SKU. e.g. B2, P1v3, P2v3
+      tier: Basic                  # App Service Plan tier. e.g. Basic, PremiumV3
+
+    # Database
+    sql:
+      admin_login: sbmadmin        # SQL admin username
+      database_sku: S1             # SQL DB SKU. e.g. S1, S2, S3
+
+    # Cache
+    redis:
+      sku: Standard                # Redis SKU. Basic / Standard / Premium
+      family: C                    # C for Basic/Standard, P for Premium
+      capacity: 1                  # Cache size. 0=250MB, 1=1GB, 2=2.5GB, 3=6GB
+
+    # Event Hub
+    eventhub:
+      throughput_units: 1          # How many throughput units (1 TU = 1MB/s in, 2MB/s out)
+      partition_count: 2           # Number of partitions. More = higher parallelism.
+      retention_days: 7            # How many days messages are retained.
+
+    # Storage
+    storage:
+      sku: Standard_LRS            # LRS=local, GRS=geo-redundant, ZRS=zone-redundant
+
+    # Monitoring
+    monitoring:
+      log_retention_days: 30       # How many days logs are kept in Log Analytics.
+
+  qa:
+    # Azure Region
+    location: centralindia         # TODO: update to client's preferred region
+    region_short: cin              # TODO: update to match location above
+
+    # Feature Flags
+    deploy_app_gateway: true       # Enable App Gateway for QA
+    deploy_apim: true              # Enable APIM for QA
+    deploy_nat_gateway: true       # Enable NAT Gateway (static IP) for QA
+
+    # Network — MUST NOT clash with dev or client's existing on-prem network
+    network:
+      vnet_prefix: 10.3.0.0/16    # TODO: confirm with client this range is free
+      app_subnet: 10.3.1.0/24
+      data_subnet: 10.3.2.0/24
+      gw_subnet: 10.3.3.0/24
+
+    # Compute
+    app_service:
+      sku: P1v3
+      tier: PremiumV3
+
+    # Database
+    sql:
+      admin_login: sbmadmin
+      database_sku: S2
+
+    # Cache
+    redis:
+      sku: Standard
+      family: C
+      capacity: 2
+
+    # Event Hub
+    eventhub:
+      throughput_units: 2
+      partition_count: 4
+      retention_days: 7
+
+    # Storage
+    storage:
+      sku: Standard_GRS            # Geo-redundant for QA/Prod
+
+    # Monitoring
+    monitoring:
+      log_retention_days: 60
+
+  prod:
+    # Azure Region
+    location: centralindia         # TODO: update to client's preferred region
+    region_short: cin              # TODO: update to match location above
+
+    # Feature Flags
+    deploy_app_gateway: true
+    deploy_apim: true
+    deploy_nat_gateway: true
+
+    # Network — MUST NOT clash with qa or client's existing on-prem network
+    network:
+      vnet_prefix: 10.5.0.0/16    # TODO: confirm with client this range is free
+      app_subnet: 10.5.1.0/24
+      data_subnet: 10.5.2.0/24
+      gw_subnet: 10.5.3.0/24
+
+    # Compute
+    app_service:
+      sku: P2v3                    # Higher tier for production
+      tier: PremiumV3
+
+    # Database
+    sql:
+      admin_login: sbmadmin
+      database_sku: S3
+
+    # Cache
+    redis:
+      sku: Standard
+      family: C
+      capacity: 2
+
+    # Event Hub
+    eventhub:
+      throughput_units: 2
+      partition_count: 4
+      retention_days: 7
+
+    # Storage
+    storage:
+      sku: Standard_GRS
+
+    # Monitoring
+    monitoring:
+      log_retention_days: 90
