@@ -1,5 +1,5 @@
 // ============================================================
-// modules/keyvault.bicep
+// modules/keyvault.bicep — Production Standard
 // CAF name: kv-sbm-{env}-cin
 // ============================================================
 
@@ -17,7 +17,8 @@ resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
     sku: { family: 'A', name: 'standard' }
     tenantId: subscription().tenantId
     enableSoftDelete: true
-    softDeleteRetentionInDays: 7
+    softDeleteRetentionInDays: 90
+    enablePurgeProtection: true
     enableRbacAuthorization: true
     networkAcls: {
       defaultAction: 'Deny'
