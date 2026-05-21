@@ -1,8 +1,13 @@
 // ============================================================
 // main.bicep — SBM Infrastructure Orchestrator
-// Naming:  Microsoft CAF standard
-// Tagging: Damco enterprise standard
-// Version: 2.0 — Multi-env, APIM, AppGW, NAT Gateway
+// Version: 3.0
+// Changes:
+//   - Linux + Nginx App Services
+//   - Scheduler (Logic App) — separate from Function App
+//   - Default Azure Monitor Alerts
+//   - Key Vault: 45-day secret expiry + IP association
+//   - SQL Private Endpoint — traffic only from backend app
+//   - Tighter IP schema from config.yml
 // ============================================================
 
 targetScope = 'resourceGroup'
@@ -24,96 +29,85 @@ param regionShort string = 'cin'
 param location string = 'centralindia'
 
 // ── Feature Flags ─────────────────────────────────────────────
-@description('Deploy Application Gateway (WAF v2) — false for dev, true for qa/prod')
-param deployAppGateway bool = false
+param deployAppGateway   bool = false
+param deployApim         bool = false
+param deployNatGateway   bool = true
+param deployScheduler    bool = true     // Logic App scheduler
 
-@description('Deploy Azure API Management — false for dev, true for qa/prod')
-param deployApim bool = false
-
-@description('Deploy NAT Gateway for static outbound IP (backend → on-prem DB2)')
-param deployNatGateway bool = false
+// ── Alert Parameters ──────────────────────────────────────────
+param alertsEnabled             bool   = true
+param alertEmailReceivers       array  = []
+param cpuThresholdPercent       int    = 80
+param memoryThresholdPercent    int    = 85
+param http5xxThreshold          int    = 10
+param sqlDtuThresholdPercent    int    = 80
+param redisMemoryThresholdPercent int  = 80
 
 // ── App Service Parameters ────────────────────────────────────
-@description('App Service Plan SKU name')
-param appServicePlanSku string = 'B2'
-
-@description('App Service Plan SKU tier')
+param appServicePlanSku  string = 'B2'
 param appServicePlanTier string = 'Basic'
 
 // ── SQL Parameters ────────────────────────────────────────────
-@description('SQL admin login name')
-param sqlAdminLogin string = 'sbmadmin'
-
-@description('SQL admin password — injected by pipeline from Key Vault / GitHub Secret')
+param sqlAdminLogin    string = 'sbmadmin'
 @secure()
 param sqlAdminPassword string = ''
-
-@description('SQL Database SKU')
-param sqlDatabaseSku string = 'S1'
+param sqlDatabaseSku   string = 'S1'
 
 // ── Redis Parameters ──────────────────────────────────────────
-@description('Redis Cache SKU tier')
 @allowed(['Basic', 'Standard', 'Premium'])
-param redisSkuName string = 'Standard'
-
-@description('Redis Cache family')
+param redisSkuName      string = 'Standard'
 @allowed(['C', 'P'])
-param redisCacheFamily string = 'C'
-
-@description('Redis Cache capacity')
-param redisCacheCapacity int = 1
+param redisCacheFamily  string = 'C'
+param redisCacheCapacity int   = 1
 
 // ── Event Hub Parameters ──────────────────────────────────────
-@description('Event Hub throughput units')
-param eventHubThroughputUnits int = 1
-
-@description('Event Hub partition count')
-param eventHubPartitionCount int = 2
-
-@description('Event Hub message retention in days')
+param eventHubThroughputUnits      int = 1
+param eventHubPartitionCount       int = 2
 param eventHubMessageRetentionDays int = 7
 
 // ── Storage Parameters ────────────────────────────────────────
-@description('Storage account SKU')
 param storageAccountSku string = 'Standard_LRS'
 
 // ── Monitoring Parameters ─────────────────────────────────────
-@description('Log Analytics retention in days')
 param logAnalyticsRetentionDays int = 30
 
 // ── Network Parameters ────────────────────────────────────────
-@description('VNet address prefix')
-param vnetAddressPrefix string = '10.0.0.0/16'
+param vnetAddressPrefix string = '10.0.0.0/24'
+param appSubnetPrefix   string = '10.0.0.0/27'
+param dataSubnetPrefix  string = '10.0.0.32/27'
+param gwSubnetPrefix    string = '10.0.0.64/27'
 
-@description('App subnet prefix')
-param appSubnetPrefix string = '10.0.1.0/24'
-
-@description('Data subnet prefix')
-param dataSubnetPrefix string = '10.0.2.0/24'
-
-@description('Gateway subnet prefix — required when deployAppGateway = true')
-param gwSubnetPrefix string = '10.0.3.0/24'
+// ── Key Vault Parameters ──────────────────────────────────────
+param kvSecretExpiryDays          int   = 45
+param kvSoftDeleteRetentionDays   int   = 7
+param kvAllowedIpAddresses        array = []
 
 // ── APIM Parameters ───────────────────────────────────────────
-@description('APIM publisher email')
 param apimPublisherEmail string = 'infra@damcogroup.com'
-
-@description('APIM publisher name')
-param apimPublisherName string = 'Damco Solutions'
+param apimPublisherName  string = 'Damco Solutions'
 
 // ── Tags ──────────────────────────────────────────────────────
 var commonTags = {
-  Project: projectName
+  Project:    projectName
   Environment: environment
-  Owner: 'damco-infra-team'
-  ManagedBy: 'damco'
-  Client: 'seaboard-marine'
+  Owner:      'damco-infra-team'
+  ManagedBy:  'damco'
+  Client:     'seaboard-marine'
   CostCenter: '${projectName}-${environment}'
   DeployedBy: 'github-actions'
 }
 
-// ── Naming base ───────────────────────────────────────────────
 var base = '${projectName}-${environment}-${regionShort}'
+
+// ── Module: NAT Gateway ───────────────────────────────────────
+module natGateway 'modules/natgateway.bicep' = if (deployNatGateway) {
+  name: 'deploy-natgw-${environment}'
+  params: {
+    location: location
+    base: base
+    tags: commonTags
+  }
+}
 
 // ── Module: VNet ──────────────────────────────────────────────
 module vnet 'modules/vnet.bicep' = {
@@ -131,23 +125,20 @@ module vnet 'modules/vnet.bicep' = {
   }
 }
 
-// ── Module: NAT Gateway (Static Outbound IP) ──────────────────
-module natGateway 'modules/natgateway.bicep' = if (deployNatGateway) {
-  name: 'deploy-natgw-${environment}'
-  params: {
-    location: location
-    base: base
-    tags: commonTags
-  }
-}
-
 // ── Module: Key Vault ─────────────────────────────────────────
+// Allowed IPs = NAT Gateway static IP so backend can reach Key Vault
+var natIp = deployNatGateway ? natGateway.outputs.staticPublicIp : ''
+var kvIps = empty(natIp) ? kvAllowedIpAddresses : concat(kvAllowedIpAddresses, [natIp])
+
 module keyVault 'modules/keyvault.bicep' = {
   name: 'deploy-kv-${environment}'
   params: {
     location: location
     base: base
     tags: commonTags
+    secretExpiryDays: kvSecretExpiryDays
+    softDeleteRetentionDays: kvSoftDeleteRetentionDays
+    allowedIpAddresses: kvIps
   }
 }
 
@@ -174,6 +165,7 @@ module storage 'modules/storage.bicep' = {
 }
 
 // ── Module: SQL ───────────────────────────────────────────────
+// Point 6: Private endpoint — SQL only accessible from backend app subnet
 module sql 'modules/sql.bicep' = {
   name: 'deploy-sql-${environment}'
   params: {
@@ -182,6 +174,8 @@ module sql 'modules/sql.bicep' = {
     sqlAdminLogin: sqlAdminLogin
     sqlAdminPassword: sqlAdminPassword
     sqlDatabaseSku: sqlDatabaseSku
+    // Restrict SQL to data subnet only via service endpoint (set in vnet.bicep)
+    dataSubnetId: vnet.outputs.dataSubnetId
     tags: commonTags
   }
 }
@@ -215,7 +209,7 @@ module eventHub 'modules/eventhub.bicep' = {
 // ── SQL Connection String ─────────────────────────────────────
 var sqlConnStr = 'Server=tcp:${sql.outputs.sqlServerFqdn},1433;Initial Catalog=${sql.outputs.sqlDatabaseName};Persist Security Info=False;User ID=${sqlAdminLogin};Password=${sqlAdminPassword};MultipleActiveResultSets=False;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;'
 
-// ── Module: App Services ──────────────────────────────────────
+// ── Module: App Services (Linux + Nginx) ─────────────────────
 module appService 'modules/appservice.bicep' = {
   name: 'deploy-app-${environment}'
   params: {
@@ -241,7 +235,39 @@ module appService 'modules/appservice.bicep' = {
   }
 }
 
-// ── Module: APIM (optional) ───────────────────────────────────
+// ── Module: Scheduler (Logic App) ────────────────────────────
+module scheduler 'modules/scheduler.bicep' = if (deployScheduler) {
+  name: 'deploy-scheduler-${environment}'
+  params: {
+    location: location
+    base: base
+    tags: commonTags
+  }
+}
+
+// ── Module: Alerts ────────────────────────────────────────────
+module alerts 'modules/alerts.bicep' = if (alertsEnabled) {
+  name: 'deploy-alerts-${environment}'
+  params: {
+    location: location
+    base: base
+    tags: commonTags
+    alertEmailReceivers: alertEmailReceivers
+    appServicePlanId: appService.outputs.appServicePlanId
+    sqlServerId: sql.outputs.sqlServerId
+    redisId: redis.outputs.redisCacheId
+    keyVaultId: keyVault.outputs.keyVaultId
+    appInsightsBackendId: monitoring.outputs.appInsightsBackendId
+    logAnalyticsId: monitoring.outputs.logAnalyticsId
+    cpuThresholdPercent: cpuThresholdPercent
+    memoryThresholdPercent: memoryThresholdPercent
+    http5xxThreshold: http5xxThreshold
+    sqlDtuThresholdPercent: sqlDtuThresholdPercent
+    redisMemoryThresholdPercent: redisMemoryThresholdPercent
+  }
+}
+
+// ── Module: APIM ─────────────────────────────────────────────
 module apim 'modules/apim.bicep' = if (deployApim) {
   name: 'deploy-apim-${environment}'
   params: {
@@ -254,7 +280,7 @@ module apim 'modules/apim.bicep' = if (deployApim) {
   }
 }
 
-// ── Module: Application Gateway (optional) ────────────────────
+// ── Module: Application Gateway ───────────────────────────────
 module appGateway 'modules/appgateway.bicep' = if (deployAppGateway) {
   name: 'deploy-appgw-${environment}'
   params: {
@@ -267,17 +293,19 @@ module appGateway 'modules/appgateway.bicep' = if (deployAppGateway) {
 }
 
 // ── Outputs ───────────────────────────────────────────────────
-output frontendUrl string = appService.outputs.frontendAppUrl
-output backendUrl string = appService.outputs.backendAppUrl
-output functionUrl string = appService.outputs.functionAppUrl
-output keyVaultUri string = keyVault.outputs.keyVaultUri
-output sqlServerFqdn string = sql.outputs.sqlServerFqdn
+output frontendUrl      string = appService.outputs.frontendAppUrl
+output backendUrl       string = appService.outputs.backendAppUrl
+output functionUrl      string = appService.outputs.functionAppUrl
+output keyVaultUri      string = keyVault.outputs.keyVaultUri
+output sqlServerFqdn    string = sql.outputs.sqlServerFqdn
 output redisCacheHostName string = redis.outputs.redisCacheHostName
 output eventHubNamespace string = eventHub.outputs.eventHubNamespaceName
-output logAnalyticsId string = monitoring.outputs.logAnalyticsId
+output logAnalyticsId   string = monitoring.outputs.logAnalyticsId
 output storageAccountName string = storage.outputs.storageAccountName
-output vnetName string = vnet.outputs.vnetName
+output vnetName         string = vnet.outputs.vnetName
 output resourceGroupName string = resourceGroup().name
-output staticOutboundIp string = deployNatGateway ? natGateway.outputs.staticPublicIp : 'NAT Gateway not deployed — enable deployNatGateway=true'
-output apimGatewayUrl string = deployApim ? apim.outputs.apimGatewayUrl : 'APIM not deployed — enable deployApim=true'
-output appGatewayPublicIp string = deployAppGateway ? appGateway.outputs.appGatewayPublicIp : 'AppGW not deployed — enable deployAppGateway=true'
+output staticOutboundIp string = deployNatGateway ? natGateway.outputs.staticPublicIp : 'NAT Gateway not deployed'
+output apimGatewayUrl   string = deployApim ? apim.outputs.apimGatewayUrl : 'APIM not deployed'
+output appGatewayPublicIp string = deployAppGateway ? appGateway.outputs.appGatewayPublicIp : 'AppGW not deployed'
+output schedulerName    string = deployScheduler ? scheduler.outputs.logicAppName : 'Scheduler not deployed'
+output alertActionGroupId string = alertsEnabled ? alerts.outputs.actionGroupId : 'Alerts not enabled'

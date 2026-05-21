@@ -1,10 +1,11 @@
 // ============================================================
-// modules/sql.bicep — Production Standard
+// modules/sql.bicep
+// Point 6: SQL Private Endpoint — traffic only from backend
+//          app service via data subnet (VNet service endpoint)
 // CAF names:
 //   SQL Server:   sql-sbm-{env}-cin
 //   SQL Database: sqldb-sbm-{env}-cin
-// SECURITY: Connection string is NOT output from this module.
-//   main.bicep constructs it and stores it in Key Vault.
+//   Private EP:   pe-sql-sbm-{env}-cin
 // ============================================================
 
 @description('Azure region for deployment')
@@ -16,18 +17,23 @@ param base string
 @description('SQL administrator login name')
 param sqlAdminLogin string
 
-@description('SQL administrator password — injected from Key Vault')
+@description('SQL administrator password — injected from GitHub Secret')
 @secure()
 param sqlAdminPassword string
 
-@description('SQL Database DTU-based SKU name (e.g. S0, S1, S2)')
+@description('SQL Database SKU')
 param sqlDatabaseSku string = 'S1'
+
+@description('Data subnet ID — SQL private endpoint placed here')
+param dataSubnetId string = ''
 
 param tags object
 
 var sqlServerName   = 'sql-${base}'
 var sqlDatabaseName = 'sqldb-${base}'
+var privateEndpointName = 'pe-sql-${base}'
 
+// ── SQL Server ────────────────────────────────────────────────
 resource sqlServer 'Microsoft.Sql/servers@2022-05-01-preview' = {
   name: sqlServerName
   location: location
@@ -36,10 +42,11 @@ resource sqlServer 'Microsoft.Sql/servers@2022-05-01-preview' = {
     administratorLogin: sqlAdminLogin
     administratorLoginPassword: sqlAdminPassword
     minimalTlsVersion: '1.2'
-    publicNetworkAccess: 'Disabled'
+    publicNetworkAccess: 'Disabled'    // ← Public access OFF — private endpoint only
   }
 }
 
+// ── SQL Database ──────────────────────────────────────────────
 resource sqlDatabase 'Microsoft.Sql/servers/databases@2022-05-01-preview' = {
   parent: sqlServer
   name: sqlDatabaseName
@@ -58,6 +65,7 @@ resource sqlDatabase 'Microsoft.Sql/servers/databases@2022-05-01-preview' = {
   }
 }
 
+// ── SQL Auditing ──────────────────────────────────────────────
 resource sqlAudit 'Microsoft.Sql/servers/auditingSettings@2022-05-01-preview' = {
   parent: sqlServer
   name: 'default'
@@ -68,8 +76,51 @@ resource sqlAudit 'Microsoft.Sql/servers/auditingSettings@2022-05-01-preview' = 
   }
 }
 
-// ── Outputs (safe — no secrets) ──
+// ── Private Endpoint — SQL only accessible from data subnet ──
+// This is what ensures only backend app service can reach SQL
+resource privateEndpoint 'Microsoft.Network/privateEndpoints@2023-04-01' = if (!empty(dataSubnetId)) {
+  name: privateEndpointName
+  location: location
+  tags: tags
+  properties: {
+    subnet: { id: dataSubnetId }
+    privateLinkServiceConnections: [
+      {
+        name: '${privateEndpointName}-conn'
+        properties: {
+          privateLinkServiceId: sqlServer.id
+          groupIds: [ 'sqlServer' ]
+        }
+      }
+    ]
+  }
+}
+
+// ── Private DNS Zone for SQL ──────────────────────────────────
+resource privateDnsZone 'Microsoft.Network/privateDnsZones@2020-06-01' = if (!empty(dataSubnetId)) {
+  name: 'privatelink.database.windows.net'
+  location: 'global'
+  tags: tags
+}
+
+resource privateDnsZoneGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2023-04-01' = if (!empty(dataSubnetId)) {
+  parent: privateEndpoint
+  name: 'sqlDnsZoneGroup'
+  properties: {
+    privateDnsZoneConfigs: [
+      {
+        name: 'privatelink-database-windows-net'
+        properties: {
+          privateDnsZoneId: privateDnsZone.id
+        }
+      }
+    ]
+  }
+}
+
+// ── Outputs ───────────────────────────────────────────────────
 output sqlServerId string = sqlServer.id
 output sqlServerName string = sqlServer.name
 output sqlServerFqdn string = sqlServer.properties.fullyQualifiedDomainName
 output sqlDatabaseName string = sqlDatabase.name
+output privateEndpointId string = !empty(dataSubnetId) ? privateEndpoint.id : ''

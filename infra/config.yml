@@ -8,156 +8,170 @@
 
 # ── Project Identity ─────────────────────────────────────────
 project:
-  name: sbm                        # Short project code (2-6 chars). Used in ALL resource names.
-  client_name: seaboard-marine     # Full client name. Used in tags.
-  owner_team: damco-infra-team     # Team responsible for infra. Used in tags.
-  managed_by: damco                # Who manages this infra. Used in tags.
-  apim_publisher_email: infra@damcogroup.com   # APIM publisher contact email.
-  apim_publisher_name: Damco Solutions         # APIM publisher display name.
+  name: sbm
+  client_name: seaboard-marine
+  owner_team: damco-infra-team
+  managed_by: damco
+  apim_publisher_email: infra@damcogroup.com
+  apim_publisher_name: Damco Solutions
+
+# ── Alert Configuration ───────────────────────────────────────
+# Point 2: Default alerts enabled — add email(s) to receive alerts
+alerts:
+  enabled: true
+  email_receivers:
+    - name: himanshu
+      email: himanshua1@damcogroup.com    # ← change/add emails here
+    - name: mrugesh
+      email: mrugesh@damcogroup.com
+  # Alert thresholds
+  cpu_threshold_percent: 80              # Alert when CPU > 80%
+  memory_threshold_percent: 85           # Alert when memory > 85%
+  http_5xx_threshold: 10                 # Alert when 5xx errors > 10 per min
+  sql_dtu_threshold_percent: 80          # Alert when SQL DTU > 80%
+  redis_memory_threshold_percent: 80     # Alert when Redis memory > 80%
 
 # ── Environment Configuration ────────────────────────────────
-# Each environment (dev/qa/prod) has its own block.
-# Change values per environment as needed.
-
 environments:
 
   dev:
-    # Azure Region
-    location: centralindia         # Azure region name. e.g. eastus, westeurope, centralindia
-    region_short: cin              # Short code for region. Used in resource names. e.g. eus, weu, cin
-
-    # Feature Flags — what gets deployed in this environment
-    deploy_app_gateway: false      # Application Gateway (WAF v2). Keep false for dev.
-    deploy_apim: false             # Azure API Management. Keep false for dev.
-    deploy_nat_gateway: true      # NAT Gateway (static IP for on-prem DB2). Keep false for dev.
-
-    # Network — IP ranges. Must not clash with other environments or existing networks.
-    network:
-      vnet_prefix: 10.0.0.0/16
-      app_subnet: 10.0.1.0/24
-      data_subnet: 10.0.2.0/24
-      gw_subnet: 10.0.3.0/24      # Only used if deploy_app_gateway = true
-
-    # Compute
-    app_service:
-      sku: B2                      # App Service Plan SKU. e.g. B2, P1v3, P2v3
-      tier: Basic                  # App Service Plan tier. e.g. Basic, PremiumV3
-
-    # Database
-    sql:
-      admin_login: sbmadmin        # SQL admin username
-      database_sku: S1             # SQL DB SKU. e.g. S1, S2, S3
-
-    # Cache
-    redis:
-      sku: Standard                # Redis SKU. Basic / Standard / Premium
-      family: C                    # C for Basic/Standard, P for Premium
-      capacity: 1                  # Cache size. 0=250MB, 1=1GB, 2=2.5GB, 3=6GB
-
-    # Event Hub
-    eventhub:
-      throughput_units: 1          # How many throughput units (1 TU = 1MB/s in, 2MB/s out)
-      partition_count: 2           # Number of partitions. More = higher parallelism.
-      retention_days: 7            # How many days messages are retained.
-
-    # Storage
-    storage:
-      sku: Standard_LRS            # LRS=local, GRS=geo-redundant, ZRS=zone-redundant
-
-    # Monitoring
-    monitoring:
-      log_retention_days: 30       # How many days logs are kept in Log Analytics.
-
-  qa:
-    # Azure Region
-    location: centralindia         # TODO: update to client's preferred region
-    region_short: cin              # TODO: update to match location above
+    location: centralindia
+    region_short: cin
 
     # Feature Flags
-    deploy_app_gateway: true       # Enable App Gateway for QA
-    deploy_apim: true              # Enable APIM for QA
-    deploy_nat_gateway: true       # Enable NAT Gateway (static IP) for QA
+    deploy_app_gateway: false
+    deploy_apim: false
+    deploy_nat_gateway: true
+    deploy_scheduler: true             # Point 1: Azure Logic App scheduler (separate from Function App)
 
-    # Network — MUST NOT clash with dev or client's existing on-prem network
+    # Point 3: Tighter IP schema for dev (fewer addresses)
+    # /28 = 16 addresses, /27 = 32 addresses (sufficient for App Service)
     network:
-      vnet_prefix: 10.3.0.0/16    # TODO: confirm with client this range is free
-      app_subnet: 10.3.1.0/24
-      data_subnet: 10.3.2.0/24
-      gw_subnet: 10.3.3.0/24
+      vnet_prefix: 10.0.0.0/24        # /24 = 256 total (was /16 = 65536 — way too wide)
+      app_subnet: 10.0.0.0/27         # /27 = 32 addresses — enough for app services
+      data_subnet: 10.0.0.32/27       # /27 = 32 addresses — enough for data services
+      gw_subnet: 10.0.0.64/27         # /27 = 32 addresses — only if AppGW needed
 
     # Compute
     app_service:
-      sku: P1v3
-      tier: PremiumV3
+      sku: B2
+      tier: Basic
 
     # Database
     sql:
       admin_login: sbmadmin
-      database_sku: S2
+      database_sku: S1
 
     # Cache
     redis:
       sku: Standard
       family: C
-      capacity: 2
+      capacity: 1
 
     # Event Hub
     eventhub:
-      throughput_units: 2
-      partition_count: 4
+      throughput_units: 1
+      partition_count: 2
       retention_days: 7
 
     # Storage
     storage:
-      sku: Standard_GRS            # Geo-redundant for QA/Prod
+      sku: Standard_LRS
 
     # Monitoring
     monitoring:
-      log_retention_days: 60
+      log_retention_days: 30
 
-  prod:
-    # Azure Region
-    location: centralindia         # TODO: update to client's preferred region
-    region_short: cin              # TODO: update to match location above
+    # Point 4: Key Vault secret expiration
+    keyvault:
+      secret_expiry_days: 45           # Secrets expire after 45 days
+      soft_delete_retention_days: 7    # Shorter retention for dev (was 90)
+
+  qa:
+    location: centralindia
+    region_short: cin
 
     # Feature Flags
     deploy_app_gateway: true
     deploy_apim: true
     deploy_nat_gateway: true
+    deploy_scheduler: true
 
-    # Network — MUST NOT clash with qa or client's existing on-prem network
+    # Point 3: QA uses slightly wider range (more services)
     network:
-      vnet_prefix: 10.5.0.0/16    # TODO: confirm with client this range is free
-      app_subnet: 10.5.1.0/24
-      data_subnet: 10.5.2.0/24
-      gw_subnet: 10.5.3.0/24
+      vnet_prefix: 10.3.0.0/23        # /23 = 512 total addresses
+      app_subnet: 10.3.0.0/26         # /26 = 64 addresses
+      data_subnet: 10.3.0.64/26       # /26 = 64 addresses
+      gw_subnet: 10.3.0.128/26        # /26 = 64 addresses (App Gateway needs room)
 
-    # Compute
     app_service:
-      sku: P2v3                    # Higher tier for production
+      sku: P1v3
       tier: PremiumV3
 
-    # Database
     sql:
       admin_login: sbmadmin
-      database_sku: S3
+      database_sku: S2
 
-    # Cache
     redis:
       sku: Standard
       family: C
       capacity: 2
 
-    # Event Hub
     eventhub:
       throughput_units: 2
       partition_count: 4
       retention_days: 7
 
-    # Storage
     storage:
       sku: Standard_GRS
 
-    # Monitoring
+    monitoring:
+      log_retention_days: 60
+
+    keyvault:
+      secret_expiry_days: 45
+      soft_delete_retention_days: 30
+
+  prod:
+    location: centralindia
+    region_short: cin
+
+    # Feature Flags
+    deploy_app_gateway: true
+    deploy_apim: true
+    deploy_nat_gateway: true
+    deploy_scheduler: true
+
+    network:
+      vnet_prefix: 10.5.0.0/23
+      app_subnet: 10.5.0.0/26
+      data_subnet: 10.5.0.64/26
+      gw_subnet: 10.5.0.128/26
+
+    app_service:
+      sku: P2v3
+      tier: PremiumV3
+
+    sql:
+      admin_login: sbmadmin
+      database_sku: S3
+
+    redis:
+      sku: Standard
+      family: C
+      capacity: 2
+
+    eventhub:
+      throughput_units: 2
+      partition_count: 4
+      retention_days: 7
+
+    storage:
+      sku: Standard_GRS
+
     monitoring:
       log_retention_days: 90
+
+    keyvault:
+      secret_expiry_days: 45
+      soft_delete_retention_days: 90

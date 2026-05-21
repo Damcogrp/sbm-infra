@@ -1,5 +1,6 @@
 // ============================================================
 // modules/monitoring.bicep
+// Updated: added appInsightsBackendId output for alerts module
 // CAF names:
 //   Log Analytics: log-sbm-{env}-cin
 //   App Insights:  appi-sbm-{env}-cin-fe / -be / -evb
@@ -10,10 +11,10 @@ param base string
 param retentionDays int = 30
 param tags object
 
-var logAnalyticsName      = 'log-${base}'
-var appInsightsFeName     = 'appi-${base}-fe'
-var appInsightsBeName     = 'appi-${base}-be'
-var appInsightsEvbName    = 'appi-${base}-evb'
+var logAnalyticsName   = 'log-${base}'
+var appInsightsFeName  = 'appi-${base}-fe'
+var appInsightsBeName  = 'appi-${base}-be'
+var appInsightsEvbName = 'appi-${base}-evb'
 
 resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2022-10-01' = {
   name: logAnalyticsName
@@ -62,6 +63,7 @@ resource appInsightsEvb 'Microsoft.Insights/components@2020-02-02' = {
   }
 }
 
+// ── Outputs ───────────────────────────────────────────────────
 output logAnalyticsId string = logAnalytics.id
 output logAnalyticsName string = logAnalytics.name
 output appInsightsFrontendKey string = appInsightsFe.properties.InstrumentationKey
@@ -70,3 +72,4 @@ output appInsightsBackendKey string = appInsightsBe.properties.InstrumentationKe
 output appInsightsBackendConnStr string = appInsightsBe.properties.ConnectionString
 output appInsightsFunctionKey string = appInsightsEvb.properties.InstrumentationKey
 output appInsightsFunctionConnStr string = appInsightsEvb.properties.ConnectionString
+output appInsightsBackendId string = appInsightsBe.id   // ← needed by alerts module
