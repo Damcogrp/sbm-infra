@@ -1,10 +1,11 @@
 // ============================================================
 // modules/appservice.bicep
+// Linux + Nginx hosting (changed from Windows + IIS)
 // CAF names:
-//   Plan:     asp-sbm-{env}-cin
-//   Frontend: app-sbm-{env}-cin-fe
-//   Backend:  app-sbm-{env}-cin-be
-//   EventBus: func-sbm-{env}-cin-evb
+//   Plan:     asp-sbm-{env}-{region}
+//   Frontend: app-sbm-{env}-{region}-fe  (Angular v21, Node 20)
+//   Backend:  app-sbm-{env}-{region}-be  (.NET 8, Linux)
+//   EventBus: func-sbm-{env}-{region}-evb (.NET 8 isolated, Linux)
 // ============================================================
 
 @description('Azure region for deployment')
@@ -59,7 +60,7 @@ var feAppName   = 'app-${base}-fe'
 var beAppName   = 'app-${base}-be'
 var funcAppName = 'func-${base}-evb'
 
-// ── App Service Plan ──────────────────────────────────────────
+// ── App Service Plan (Linux) ──────────────────────────────────
 resource appServicePlan 'Microsoft.Web/serverfarms@2022-09-01' = {
   name: aspName
   location: location
@@ -68,16 +69,19 @@ resource appServicePlan 'Microsoft.Web/serverfarms@2022-09-01' = {
     name: appServicePlanSku
     tier: appServicePlanTier
   }
-  kind: 'app'
-  properties: { reserved: false }
+  kind: 'linux'                // ← Linux (was 'app' for Windows)
+  properties: {
+    reserved: true             // ← required for Linux
+  }
 }
 
-// ── Frontend App (Angular v21) ────────────────────────────────
+// ── Frontend App (Angular v21, Linux + Nginx) ─────────────────
 resource frontendApp 'Microsoft.Web/sites@2022-09-01' = {
   name: feAppName
   location: location
+  kind: 'app,linux'            // ← Linux app
   identity: { type: 'SystemAssigned' }
-  tags: union(tags, { Component: 'frontend', Stack: 'angular-v21' })
+  tags: union(tags, { Component: 'frontend', Stack: 'angular-v21', OS: 'linux', WebServer: 'nginx' })
   properties: {
     serverFarmId: appServicePlan.id
     httpsOnly: true
@@ -85,6 +89,7 @@ resource frontendApp 'Microsoft.Web/sites@2022-09-01' = {
       minTlsVersion: '1.2'
       http20Enabled: true
       healthCheckPath: '/health'
+      linuxFxVersion: 'NODE|20-lts'    // ← Node 20 for Angular frontend
       appSettings: [
         { name: 'APPINSIGHTS_INSTRUMENTATIONKEY',        value: appInsightsFrontendKey }
         { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsightsFrontendConnStr }
@@ -104,12 +109,13 @@ resource frontendVnet 'Microsoft.Web/sites/networkConfig@2022-09-01' = {
   }
 }
 
-// ── Backend App (.NET Core Modular Monolith) ──────────────────
+// ── Backend App (.NET 8, Linux + Nginx) ───────────────────────
 resource backendApp 'Microsoft.Web/sites@2022-09-01' = {
   name: beAppName
   location: location
+  kind: 'app,linux'            // ← Linux app
   identity: { type: 'SystemAssigned' }
-  tags: union(tags, { Component: 'backend', Stack: 'dotnet-8' })
+  tags: union(tags, { Component: 'backend', Stack: 'dotnet-8', OS: 'linux', WebServer: 'nginx' })
   properties: {
     serverFarmId: appServicePlan.id
     httpsOnly: true
@@ -118,7 +124,7 @@ resource backendApp 'Microsoft.Web/sites@2022-09-01' = {
       http20Enabled: true
       alwaysOn: true
       healthCheckPath: '/api/health'
-      netFrameworkVersion: 'v8.0'
+      linuxFxVersion: 'DOTNETCORE|8.0'  // ← .NET 8 on Linux
       appSettings: [
         { name: 'APPINSIGHTS_INSTRUMENTATIONKEY',        value: appInsightsBackendKey }
         { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsightsBackendConnStr }
@@ -148,23 +154,24 @@ resource backendVnet 'Microsoft.Web/sites/networkConfig@2022-09-01' = {
   }
 }
 
-// ── EventBus Function App ─────────────────────────────────────
+// ── EventBus Function App (Linux, .NET 8 isolated) ───────────
 resource functionApp 'Microsoft.Web/sites@2022-09-01' = {
   name: funcAppName
   location: location
-  kind: 'functionapp'
+  kind: 'functionapp,linux'    // ← Linux function app
   identity: { type: 'SystemAssigned' }
-  tags: union(tags, { Component: 'eventbus', Stack: 'dotnet-functions-v4' })
+  tags: union(tags, { Component: 'eventbus', Stack: 'dotnet-functions-v4', OS: 'linux' })
   properties: {
     serverFarmId: appServicePlan.id
     httpsOnly: true
     siteConfig: {
       minTlsVersion: '1.2'
       alwaysOn: true
+      linuxFxVersion: 'DOTNET-ISOLATED|8.0'  // ← .NET 8 isolated on Linux
       appSettings: [
         { name: 'AzureWebJobsStorage',                   value: storageConnectionString }
         { name: 'FUNCTIONS_EXTENSION_VERSION',           value: '~4' }
-        { name: 'FUNCTIONS_WORKER_RUNTIME',              value: 'dotnet' }
+        { name: 'FUNCTIONS_WORKER_RUNTIME',              value: 'dotnet-isolated' }
         { name: 'APPINSIGHTS_INSTRUMENTATIONKEY',        value: appInsightsFunctionKey }
         { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsightsFunctionConnStr }
         { name: 'EventHubConnection',                    value: eventHubConnectionString }
