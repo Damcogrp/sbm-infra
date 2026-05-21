@@ -12,106 +12,131 @@ project:
   client_name: seaboard-marine     # Full client name. Used in tags.
   owner_team: damco-infra-team     # Team responsible for infra. Used in tags.
   managed_by: damco                # Who manages this infra. Used in tags.
-  apim_publisher_email: infra@damcogroup.com   # APIM publisher contact email.
-  apim_publisher_name: Damco Solutions         # APIM publisher display name.
+  apim_publisher_email: infra@damcogroup.com
+  apim_publisher_name: Damco Solutions
 
 # ── Environment Configuration ────────────────────────────────
-# Each environment (dev/qa/prod) has its own block.
-# Change values per environment as needed.
-
 environments:
 
   dev:
     # Azure Region
-    location: centralindia         # Azure region name. e.g. eastus, westeurope, centralindia
-    region_short: cin              # Short code for region. Used in resource names. e.g. eus, weu, cin
+    location: centralindia
+    region_short: cin
 
-    # Feature Flags — what gets deployed in this environment
+    # ── Feature Flags ─────────────────────────────────────────
+    # Set true/false to enable or disable any Azure service.
+    # Run pipeline after changing — only changed services are affected.
+
+    # Networking
+    deploy_vnet: true              # VNet + NSGs + Subnets. Keep true always.
+    deploy_nat_gateway: true       # NAT Gateway — static outbound IP for on-prem DB2.
+
+    # Compute
+    deploy_app_service: true       # App Services (FE + BE + Function). Core service.
+
+    # Data
+    deploy_sql: false              # Azure SQL Server + Database. Set false to skip initially.
+    deploy_redis: true             # Azure Redis Cache. In-memory caching layer.
+    deploy_eventhub: true          # Azure Event Hubs. Async messaging.
+    deploy_storage: true           # Azure Blob Storage. Files, reports, web data.
+
+    # Security & Observability
+    deploy_keyvault: true          # Azure Key Vault. Secrets, certs, keys.
+    deploy_monitoring: true        # Log Analytics + App Insights. Always recommended.
+
+    # QA/Prod only services
     deploy_app_gateway: false      # Application Gateway (WAF v2). Keep false for dev.
     deploy_apim: false             # Azure API Management. Keep false for dev.
-    deploy_nat_gateway: false      # NAT Gateway (static IP for on-prem DB2). Keep false for dev.
 
-    # Network — IP ranges. Must not clash with other environments or existing networks.
+    # ── Network ───────────────────────────────────────────────
     network:
       vnet_prefix: 10.0.0.0/16
       app_subnet: 10.0.1.0/24
       data_subnet: 10.0.2.0/24
-      gw_subnet: 10.0.3.0/24      # Only used if deploy_app_gateway = true
+      gw_subnet: 10.0.3.0/24
 
-    # Compute
+    # ── Compute ───────────────────────────────────────────────
     app_service:
-      sku: B2                      # App Service Plan SKU. e.g. B2, P1v3, P2v3
-      tier: Basic                  # App Service Plan tier. e.g. Basic, PremiumV3
+      sku: B2
+      tier: Basic
 
-    # Database
+    # ── Database (used only if deploy_sql = true) ─────────────
     sql:
-      admin_login: sbmadmin        # SQL admin username
-      database_sku: S1             # SQL DB SKU. e.g. S1, S2, S3
+      admin_login: sbmadmin
+      database_sku: S1
 
-    # Cache
+    # ── Cache (used only if deploy_redis = true) ──────────────
     redis:
-      sku: Standard                # Redis SKU. Basic / Standard / Premium
-      family: C                    # C for Basic/Standard, P for Premium
-      capacity: 1                  # Cache size. 0=250MB, 1=1GB, 2=2.5GB, 3=6GB
+      sku: Standard
+      family: C
+      capacity: 1
 
-    # Event Hub
+    # ── Event Hub (used only if deploy_eventhub = true) ───────
     eventhub:
-      throughput_units: 1          # How many throughput units (1 TU = 1MB/s in, 2MB/s out)
-      partition_count: 2           # Number of partitions. More = higher parallelism.
-      retention_days: 7            # How many days messages are retained.
+      throughput_units: 1
+      partition_count: 2
+      retention_days: 7
 
-    # Storage
+    # ── Storage (used only if deploy_storage = true) ──────────
     storage:
-      sku: Standard_LRS            # LRS=local, GRS=geo-redundant, ZRS=zone-redundant
+      sku: Standard_LRS
 
-    # Monitoring
+    # ── Monitoring (used only if deploy_monitoring = true) ────
     monitoring:
-      log_retention_days: 30       # How many days logs are kept in Log Analytics.
+      log_retention_days: 30
 
   qa:
     # Azure Region
     location: centralindia         # TODO: update to client's preferred region
     region_short: cin              # TODO: update to match location above
 
-    # Feature Flags
+    # ── Feature Flags ─────────────────────────────────────────
+    deploy_vnet: true
+    deploy_nat_gateway: true
+    deploy_app_service: true
+    deploy_sql: true               # Enable SQL for QA
+    deploy_redis: true
+    deploy_eventhub: true
+    deploy_storage: true
+    deploy_keyvault: true
+    deploy_monitoring: true
     deploy_app_gateway: true       # Enable App Gateway for QA
     deploy_apim: true              # Enable APIM for QA
-    deploy_nat_gateway: true       # Enable NAT Gateway (static IP) for QA
 
-    # Network — MUST NOT clash with dev or client's existing on-prem network
+    # ── Network ───────────────────────────────────────────────
     network:
       vnet_prefix: 10.3.0.0/16    # TODO: confirm with client this range is free
       app_subnet: 10.3.1.0/24
       data_subnet: 10.3.2.0/24
       gw_subnet: 10.3.3.0/24
 
-    # Compute
+    # ── Compute ───────────────────────────────────────────────
     app_service:
       sku: P1v3
       tier: PremiumV3
 
-    # Database
+    # ── Database ──────────────────────────────────────────────
     sql:
       admin_login: sbmadmin
       database_sku: S2
 
-    # Cache
+    # ── Cache ─────────────────────────────────────────────────
     redis:
       sku: Standard
       family: C
       capacity: 2
 
-    # Event Hub
+    # ── Event Hub ─────────────────────────────────────────────
     eventhub:
       throughput_units: 2
       partition_count: 4
       retention_days: 7
 
-    # Storage
+    # ── Storage ───────────────────────────────────────────────
     storage:
-      sku: Standard_GRS            # Geo-redundant for QA/Prod
+      sku: Standard_GRS
 
-    # Monitoring
+    # ── Monitoring ────────────────────────────────────────────
     monitoring:
       log_retention_days: 60
 
@@ -120,44 +145,52 @@ environments:
     location: centralindia         # TODO: update to client's preferred region
     region_short: cin              # TODO: update to match location above
 
-    # Feature Flags
+    # ── Feature Flags ─────────────────────────────────────────
+    deploy_vnet: true
+    deploy_nat_gateway: true
+    deploy_app_service: true
+    deploy_sql: true
+    deploy_redis: true
+    deploy_eventhub: true
+    deploy_storage: true
+    deploy_keyvault: true
+    deploy_monitoring: true
     deploy_app_gateway: true
     deploy_apim: true
-    deploy_nat_gateway: true
 
-    # Network — MUST NOT clash with qa or client's existing on-prem network
+    # ── Network ───────────────────────────────────────────────
     network:
       vnet_prefix: 10.5.0.0/16    # TODO: confirm with client this range is free
       app_subnet: 10.5.1.0/24
       data_subnet: 10.5.2.0/24
       gw_subnet: 10.5.3.0/24
 
-    # Compute
+    # ── Compute ───────────────────────────────────────────────
     app_service:
-      sku: P2v3                    # Higher tier for production
+      sku: P2v3
       tier: PremiumV3
 
-    # Database
+    # ── Database ──────────────────────────────────────────────
     sql:
       admin_login: sbmadmin
       database_sku: S3
 
-    # Cache
+    # ── Cache ─────────────────────────────────────────────────
     redis:
       sku: Standard
       family: C
       capacity: 2
 
-    # Event Hub
+    # ── Event Hub ─────────────────────────────────────────────
     eventhub:
       throughput_units: 2
       partition_count: 4
       retention_days: 7
 
-    # Storage
+    # ── Storage ───────────────────────────────────────────────
     storage:
       sku: Standard_GRS
 
-    # Monitoring
+    # ── Monitoring ────────────────────────────────────────────
     monitoring:
       log_retention_days: 90
