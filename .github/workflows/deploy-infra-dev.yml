@@ -13,6 +13,7 @@ on:
   pull_request:
     branches: [ main ]
     paths: [ 'infra/**' ]
+  workflow_dispatch:
 
 permissions:
   id-token: write
