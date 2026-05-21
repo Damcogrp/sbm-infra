@@ -1,35 +1,24 @@
 // ============================================================
 // modules/alerts.bicep
-// Point 2: Default Azure Monitor alerts for all key services
-// Alerts fire to email addresses defined in config.yml
-// CAF name: ag-sbm-{env}-{region} (Action Group)
+// Default Azure Monitor alerts for all key services
+// Emails configured in config.yml → alerts.email_receivers
 // ============================================================
 
-param location string
 param base string
 param tags object
-
-// ── Alert recipients (from config.yml → alerts.email_receivers)
 param alertEmailReceivers array = []
-
-// ── Resource IDs to monitor
 param appServicePlanId string
 param sqlServerId string = ''
 param redisId string = ''
 param keyVaultId string = ''
-param appInsightsBackendId string = ''
-param logAnalyticsId string = ''
-
-// ── Thresholds (from config.yml → alerts)
 param cpuThresholdPercent int = 80
 param memoryThresholdPercent int = 85
-param http5xxThreshold int = 10
 param sqlDtuThresholdPercent int = 80
 param redisMemoryThresholdPercent int = 80
 
 var actionGroupName = 'ag-${base}'
 
-// ── Action Group (who gets notified) ─────────────────────────
+// ── Action Group — who gets notified ─────────────────────────
 resource actionGroup 'Microsoft.Insights/actionGroups@2023-01-01' = {
   name: actionGroupName
   location: 'global'
@@ -45,7 +34,7 @@ resource actionGroup 'Microsoft.Insights/actionGroups@2023-01-01' = {
   }
 }
 
-// ── Alert: App Service Plan CPU > threshold ───────────────────
+// ── Alert: CPU High ───────────────────────────────────────────
 resource alertCpu 'Microsoft.Insights/metricAlerts@2018-03-01' = {
   name: 'alert-${base}-cpu-high'
   location: 'global'
@@ -74,7 +63,7 @@ resource alertCpu 'Microsoft.Insights/metricAlerts@2018-03-01' = {
   }
 }
 
-// ── Alert: App Service Plan Memory > threshold ────────────────
+// ── Alert: Memory High ────────────────────────────────────────
 resource alertMemory 'Microsoft.Insights/metricAlerts@2018-03-01' = {
   name: 'alert-${base}-memory-high'
   location: 'global'
@@ -103,7 +92,7 @@ resource alertMemory 'Microsoft.Insights/metricAlerts@2018-03-01' = {
   }
 }
 
-// ── Alert: SQL DTU > threshold (only if SQL deployed) ─────────
+// ── Alert: SQL DTU High ───────────────────────────────────────
 resource alertSqlDtu 'Microsoft.Insights/metricAlerts@2018-03-01' = if (!empty(sqlServerId)) {
   name: 'alert-${base}-sql-dtu'
   location: 'global'
@@ -132,7 +121,7 @@ resource alertSqlDtu 'Microsoft.Insights/metricAlerts@2018-03-01' = if (!empty(s
   }
 }
 
-// ── Alert: Redis Memory > threshold (only if Redis deployed) ──
+// ── Alert: Redis Memory High ──────────────────────────────────
 resource alertRedis 'Microsoft.Insights/metricAlerts@2018-03-01' = if (!empty(redisId)) {
   name: 'alert-${base}-redis-memory'
   location: 'global'
@@ -161,13 +150,13 @@ resource alertRedis 'Microsoft.Insights/metricAlerts@2018-03-01' = if (!empty(re
   }
 }
 
-// ── Alert: Key Vault availability ────────────────────────────
+// ── Alert: Key Vault Availability ────────────────────────────
 resource alertKv 'Microsoft.Insights/metricAlerts@2018-03-01' = if (!empty(keyVaultId)) {
   name: 'alert-${base}-kv-availability'
   location: 'global'
   tags: tags
   properties: {
-    description: 'Key Vault availability dropped below 100%'
+    description: 'Key Vault availability dropped'
     severity: 1
     enabled: true
     scopes: [ keyVaultId ]
