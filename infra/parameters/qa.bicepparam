@@ -1,14 +1,14 @@
 // ============================================================
 // parameters/qa.bicepparam
-// DO NOT EDIT — all values are driven from infra/config.yml
+// DO NOT EDIT — all values driven from infra/config.yml
 // ============================================================
 
 using '../main.bicep'
 
-// ── Read everything from config.yml ──────────────────────────
 var cfg = loadYamlContent('../config.yml')
 var env = cfg.environments.qa
 var prj = cfg.project
+var alr = cfg.alerts
 
 param environment            = 'qa'
 param projectName            = prj.name
@@ -19,6 +19,16 @@ param regionShort            = env.region_short
 param deployAppGateway       = env.deploy_app_gateway
 param deployApim             = env.deploy_apim
 param deployNatGateway       = env.deploy_nat_gateway
+param deployScheduler        = env.deploy_scheduler
+
+// ── Alerts ────────────────────────────────────────────────────
+param alertsEnabled             = alr.enabled
+param alertEmailReceivers       = alr.email_receivers
+param cpuThresholdPercent       = alr.cpu_threshold_percent
+param memoryThresholdPercent    = alr.memory_threshold_percent
+param http5xxThreshold          = alr.http_5xx_threshold
+param sqlDtuThresholdPercent    = alr.sql_dtu_threshold_percent
+param redisMemoryThresholdPercent = alr.redis_memory_threshold_percent
 
 // ── Compute ───────────────────────────────────────────────────
 param appServicePlanSku      = env.app_service.sku
@@ -26,6 +36,7 @@ param appServicePlanTier     = env.app_service.tier
 
 // ── Database ──────────────────────────────────────────────────
 param sqlAdminLogin          = env.sql.admin_login
+param sqlAdminPassword       = ''
 param sqlDatabaseSku         = env.sql.database_sku
 
 // ── Redis ─────────────────────────────────────────────────────
@@ -49,6 +60,11 @@ param vnetAddressPrefix      = env.network.vnet_prefix
 param appSubnetPrefix        = env.network.app_subnet
 param dataSubnetPrefix       = env.network.data_subnet
 param gwSubnetPrefix         = env.network.gw_subnet
+
+// ── Key Vault ─────────────────────────────────────────────────
+param kvSecretExpiryDays         = env.keyvault.secret_expiry_days
+param kvSoftDeleteRetentionDays  = env.keyvault.soft_delete_retention_days
+param kvAllowedIpAddresses       = []
 
 // ── APIM ──────────────────────────────────────────────────────
 param apimPublisherEmail     = prj.apim_publisher_email
