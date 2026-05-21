@@ -1,7 +1,6 @@
 // ============================================================
 // modules/scheduler.bicep
-// Point 1: Separate Azure Logic App for scheduling
-// (replaces using Function App for scheduling)
+// Azure Logic App — Separate scheduler service
 // CAF name: logic-sbm-{env}-{region}-sched
 // ============================================================
 
@@ -11,7 +10,6 @@ param tags object
 
 var logicAppName = 'logic-${base}-sched'
 
-// ── Logic App (Consumption tier — pay per execution) ─────────
 resource logicApp 'Microsoft.Logic/workflows@2019-05-01' = {
   name: logicAppName
   location: location
@@ -23,8 +21,6 @@ resource logicApp 'Microsoft.Logic/workflows@2019-05-01' = {
       contentVersion: '1.0.0.0'
       parameters: {}
       triggers: {
-        // Default: runs every day at midnight
-        // Developers update this trigger definition per their schedule needs
         Recurrence: {
           recurrence: {
             frequency: 'Day'
@@ -44,4 +40,4 @@ resource logicApp 'Microsoft.Logic/workflows@2019-05-01' = {
 
 output logicAppId string = logicApp.id
 output logicAppName string = logicApp.name
-output logicAppCallbackUrl string = listCallbackUrl('${logicApp.id}/triggers/Recurrence', logicApp.apiVersion).value
+// Note: listCallbackUrl removed — not supported on Recurrence trigger type

@@ -1,22 +1,19 @@
 // ============================================================
 // modules/keyvault.bicep
-// Point 4: 45-day secret expiration + rotation policy
-// Point 5: IP association via network ACLs
-// CAF name: kv-sbm-{env}-cin
+// Point 4: 45-day secret expiry
+// Point 5: IP address association
+// CAF name: kv-sbm-{env}-cin-02
+// Note: -02 suffix added to avoid soft-delete conflict
 // ============================================================
 
 param location string
 param base string
 param tags object
-
-// Point 4: Secret expiry configurable from config.yml
 param secretExpiryDays int = 45
 param softDeleteRetentionDays int = 7
+param allowedIpAddresses array = []
 
-// Point 5: IP Address association — allowed IPs to access Key Vault
-param allowedIpAddresses array = []   // e.g. ['20.192.x.x', '10.0.0.0/27']
-
-var keyVaultName = 'kv-${base}'
+var keyVaultName = 'kv-${base}-02'   // ← -02 suffix to avoid soft-delete conflict
 
 resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
   name: keyVaultName
@@ -29,7 +26,6 @@ resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
     softDeleteRetentionInDays: softDeleteRetentionDays
     enablePurgeProtection: true
     enableRbacAuthorization: true
-    // Point 5: IP Address association
     networkAcls: {
       defaultAction: 'Deny'
       bypass: 'AzureServices'
@@ -39,14 +35,6 @@ resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
       virtualNetworkRules: []
     }
   }
-}
-
-// Point 4: Secret rotation/expiry policy via Key Vault policy
-// Note: Individual secrets get expiry set when created by app
-// This sets the default rotation policy for auto-rotated secrets
-resource secretRotationPolicy 'Microsoft.KeyVault/vaults/keys@2023-07-01' existing = {
-  parent: keyVault
-  name: 'placeholder'
 }
 
 output keyVaultId string = keyVault.id
