@@ -26,7 +26,6 @@ param alertsEnabled             = alr.enabled
 param alertEmailReceivers       = alr.email_receivers
 param cpuThresholdPercent       = alr.cpu_threshold_percent
 param memoryThresholdPercent    = alr.memory_threshold_percent
-param http5xxThreshold          = alr.http_5xx_threshold
 param sqlDtuThresholdPercent    = alr.sql_dtu_threshold_percent
 param redisMemoryThresholdPercent = alr.redis_memory_threshold_percent
 
