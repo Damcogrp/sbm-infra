@@ -54,7 +54,7 @@ environments:
 
     # Compute
     app_service:
-      sku: B2
+      sku: B1
       tier: Basic
 
     # Database
