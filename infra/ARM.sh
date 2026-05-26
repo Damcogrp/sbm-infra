@@ -52,13 +52,13 @@ cd ~
 rm -rf sbm-infra-deploy
 git clone https://github.com/Damcogrp/sbm-infra.git sbm-infra-deploy
 cd sbm-infra-deploy
-echo "✅ Repo cloned"
+echo " Repo cloned"
 
 # Step 2: Install Bicep
 echo "Step 2: Installing Bicep CLI..."
 az bicep install
 az bicep version
-echo "✅ Bicep ready"
+echo " Bicep ready"
 
 # Step 3: Create Resource Group
 echo "Step 3: Creating resource group..."
@@ -71,7 +71,7 @@ az group create \
     ManagedBy=damco \
     Client=seaboard-marine \
     DeployedBy=client-cloudshell
-echo "✅ Resource group: $RESOURCE_GROUP"
+echo " Resource group: $RESOURCE_GROUP"
 
 # Step 4: Deploy Infrastructure
 echo "Step 4: Deploying QA infrastructure..."
@@ -113,7 +113,7 @@ az deployment group create \
   --name "$DEPLOY_NAME" \
   --mode Incremental
 echo ""
-echo "✅ Deployment complete"
+echo " Deployment complete"
 
 # Step 5: List all resources
 echo ""
@@ -170,7 +170,7 @@ az webapp show \
 
 echo ""
 echo "============================================"
-echo "  ✅ SBM QA INFRASTRUCTURE READY!"
+echo "   SBM QA INFRASTRUCTURE READY!"
 echo "============================================"
 echo ""
 echo "Next steps:"
