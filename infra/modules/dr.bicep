@@ -11,19 +11,13 @@ param base string
 param tags object
 
 // ── Primary region resources ──────────────────────────────────
-param primaryLocation string
 param primaryFrontendFqdn string
-param primaryBackendFqdn string
-param primarySqlServerId string
 param primarySqlServerName string
 
-// ── Secondary region resources ────────────────────────────────
-param secondaryLocation string
-param secondaryRegionShort string
+// ── Secondary region ──────────────────────────────────────────
 param secondarySqlServerName string = ''
 
 // ── Traffic Manager ───────────────────────────────────────────
-// Routes users to primary, fails over to secondary automatically
 var tmProfileName = 'tm-${base}'
 
 resource trafficManager 'Microsoft.Network/trafficManagerProfiles@2022-04-01' = {
@@ -32,7 +26,7 @@ resource trafficManager 'Microsoft.Network/trafficManagerProfiles@2022-04-01' = 
   tags: tags
   properties: {
     profileStatus: 'Enabled'
-    trafficRoutingMethod: 'Priority'   // Primary = priority 1, Secondary = priority 2
+    trafficRoutingMethod: 'Priority'
     dnsConfig: {
       relativeName: tmProfileName
       ttl: 30
@@ -52,7 +46,7 @@ resource trafficManager 'Microsoft.Network/trafficManagerProfiles@2022-04-01' = 
         properties: {
           target: primaryFrontendFqdn
           endpointStatus: 'Enabled'
-          priority: 1                  // Primary always serves traffic
+          priority: 1
         }
       }
     ]
@@ -60,14 +54,12 @@ resource trafficManager 'Microsoft.Network/trafficManagerProfiles@2022-04-01' = 
 }
 
 // ── SQL Failover Group ────────────────────────────────────────
-// Automatically replicates SQL to secondary region
-// Fails over automatically if primary SQL goes down
 resource sqlFailoverGroup 'Microsoft.Sql/servers/failoverGroups@2022-05-01-preview' = if (!empty(secondarySqlServerName)) {
   name: '${primarySqlServerName}/fog-${base}'
   properties: {
     readWriteEndpoint: {
       failoverPolicy: 'Automatic'
-      failoverWithDataLossGracePeriodMinutes: 60  // Wait 60 mins before auto-failover
+      failoverWithDataLossGracePeriodMinutes: 60
     }
     readOnlyEndpoint: {
       failoverPolicy: 'Disabled'
