@@ -16,18 +16,36 @@ param location               = env.location
 param regionShort            = env.region_short
 
 // ── Feature Flags ─────────────────────────────────────────────
+param deployVnet             = env.deploy_vnet
+param deployKeyVault         = env.deploy_keyvault
+param deployMonitoring       = env.deploy_monitoring
+param deployStorage          = env.deploy_storage
+param deploySql              = env.deploy_sql
+param deployRedis            = env.deploy_redis
+param deployEventHub         = env.deploy_eventhub
+param deployAppService       = env.deploy_app_service
+param deployScheduler        = env.deploy_scheduler
+param deployNatGateway       = env.deploy_nat_gateway
 param deployAppGateway       = env.deploy_app_gateway
 param deployApim             = env.deploy_apim
-param deployNatGateway       = env.deploy_nat_gateway
-param deployScheduler        = env.deploy_scheduler
+param deployDdosProtection   = env.deploy_ddos_protection
+param deployDr               = env.deploy_dr
+
+// ── DR Config ─────────────────────────────────────────────────
+param drSecondaryLocation    = env.dr.secondary_location
+param drSecondaryRegionShort = env.dr.secondary_region_short
+param drSqlFailover          = env.dr.sql_failover
+param drTrafficManager       = env.dr.traffic_manager
 
 // ── Alerts ────────────────────────────────────────────────────
-param alertsEnabled             = alr.enabled
-param alertEmailReceivers       = alr.email_receivers
-param cpuThresholdPercent       = alr.cpu_threshold_percent
-param memoryThresholdPercent    = alr.memory_threshold_percent
-param sqlDtuThresholdPercent    = alr.sql_dtu_threshold_percent
+param alertsEnabled               = alr.enabled
+param alertEmailReceivers         = alr.email_receivers
+param cpuThresholdPercent         = alr.cpu_threshold_percent
+param memoryThresholdPercent      = alr.memory_threshold_percent
+param sqlDtuThresholdPercent      = alr.sql_dtu_threshold_percent
 param redisMemoryThresholdPercent = alr.redis_memory_threshold_percent
+param http5xxThreshold            = alr.http_5xx_threshold
+param availabilityThresholdPercent = alr.availability_threshold_percent
 
 // ── Compute ───────────────────────────────────────────────────
 param appServicePlanSku      = env.app_service.sku

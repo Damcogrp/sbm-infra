@@ -27,218 +27,302 @@ alerts:
   memory_threshold_percent: 85
   sql_dtu_threshold_percent: 80
   redis_memory_threshold_percent: 80
+  http_5xx_threshold: 10
+  availability_threshold_percent: 99
 
 # ── Environment Configuration ────────────────────────────────
+# Sequence: dev → qa → uat → prod
 environments:
 
+  # ──────────────────────────────────────────────────────────
+  # DEV — Damco Azure — Developer testing
+  # ──────────────────────────────────────────────────────────
   dev:
     location: centralindia
     region_short: cin
 
-    # Feature Flags
+    # ── Feature Flags ──────────────────────────────────────
+    # Core services
+    deploy_vnet: true
+    deploy_keyvault: true
+    deploy_monitoring: true
+    deploy_storage: true
+    deploy_sql: true               # Set false to skip SQL initially
+    deploy_redis: true
+    deploy_eventhub: true
+    deploy_app_service: true
+    deploy_scheduler: true
+    deploy_nat_gateway: true
+
+    # QA/Prod only — keep false for dev
     deploy_app_gateway: false
     deploy_apim: false
-    deploy_nat_gateway: true
-    deploy_scheduler: true
 
-    # Network — tighter IP schema for dev
+    # Prod only — keep false for dev/qa/uat
+    deploy_ddos_protection: false
+    deploy_dr: false
+
+    # ── DR Config (only used if deploy_dr: true) ───────────
+    dr:
+      secondary_location: southindia
+      secondary_region_short: sin
+      sql_failover: false
+      traffic_manager: false
+
+    # ── Network ────────────────────────────────────────────
     network:
       vnet_prefix: 10.0.0.0/24
       app_subnet: 10.0.0.0/27
       data_subnet: 10.0.0.32/27
       gw_subnet: 10.0.0.64/27
 
-    # Compute
+    # ── Compute ────────────────────────────────────────────
     app_service:
       sku: B1
       tier: Basic
 
-    # Database
+    # ── Database (used only if deploy_sql: true) ───────────
     sql:
       admin_login: sbmadmin
       database_sku: S1
 
-    # Cache
+    # ── Cache ──────────────────────────────────────────────
     redis:
       sku: Standard
       family: C
       capacity: 1
 
-    # Event Hub
+    # ── Event Hub ──────────────────────────────────────────
     eventhub:
       throughput_units: 1
       partition_count: 2
       retention_days: 7
 
-    # Storage
+    # ── Storage ────────────────────────────────────────────
     storage:
       sku: Standard_LRS
 
-    # Monitoring
+    # ── Monitoring ─────────────────────────────────────────
     monitoring:
       log_retention_days: 30
 
-    # Key Vault
+    # ── Key Vault ──────────────────────────────────────────
     keyvault:
       secret_expiry_days: 45
       soft_delete_retention_days: 7
 
+  # ──────────────────────────────────────────────────────────
+  # QA — Client Azure — Client QA testing
+  # ──────────────────────────────────────────────────────────
+  qa:
+    location: centralindia         # TODO: update to client's preferred region
+    region_short: cin              # TODO: update to match location above
+
+    # ── Feature Flags ──────────────────────────────────────
+    deploy_vnet: true
+    deploy_keyvault: true
+    deploy_monitoring: true
+    deploy_storage: true
+    deploy_sql: true
+    deploy_redis: true
+    deploy_eventhub: true
+    deploy_app_service: true
+    deploy_scheduler: true
+    deploy_nat_gateway: true
+    deploy_app_gateway: true
+    deploy_apim: true
+    deploy_ddos_protection: false  # Optional — enable if client requests
+    deploy_dr: false
+
+    # ── DR Config ──────────────────────────────────────────
+    dr:
+      secondary_location: southindia
+      secondary_region_short: sin
+      sql_failover: false
+      traffic_manager: false
+
+    # ── Network ────────────────────────────────────────────
+    network:
+      vnet_prefix: 10.3.0.0/23    # TODO: confirm with client this range is free
+      app_subnet: 10.3.0.0/26
+      data_subnet: 10.3.0.64/26
+      gw_subnet: 10.3.0.128/26
+
+    # ── Compute ────────────────────────────────────────────
+    app_service:
+      sku: P1v3
+      tier: PremiumV3
+
+    # ── Database ───────────────────────────────────────────
+    sql:
+      admin_login: sbmadmin
+      database_sku: S2
+
+    # ── Cache ──────────────────────────────────────────────
+    redis:
+      sku: Standard
+      family: C
+      capacity: 2
+
+    # ── Event Hub ──────────────────────────────────────────
+    eventhub:
+      throughput_units: 2
+      partition_count: 4
+      retention_days: 7
+
+    # ── Storage ────────────────────────────────────────────
+    storage:
+      sku: Standard_GRS
+
+    # ── Monitoring ─────────────────────────────────────────
+    monitoring:
+      log_retention_days: 60
+
+    # ── Key Vault ──────────────────────────────────────────
+    keyvault:
+      secret_expiry_days: 45
+      soft_delete_retention_days: 30
+
+  # ──────────────────────────────────────────────────────────
+  # UAT — Damco Azure — Client UAT acceptance testing
+  # ──────────────────────────────────────────────────────────
   uat:
-    # ── UAT runs on Damco Azure ───────────────────────────────
-    # Same as dev but slightly higher specs for client testing
     location: centralindia
     region_short: cin
 
-    # Feature Flags — UAT has AppGW + APIM for realistic testing
-    deploy_app_gateway: false      # Keep false unless client needs WAF in UAT
-    deploy_apim: false             # Keep false unless client needs APIM in UAT
-    deploy_nat_gateway: true
+    # ── Feature Flags ──────────────────────────────────────
+    deploy_vnet: true
+    deploy_keyvault: true
+    deploy_monitoring: true
+    deploy_storage: true
+    deploy_sql: true
+    deploy_redis: true
+    deploy_eventhub: true
+    deploy_app_service: true
     deploy_scheduler: true
+    deploy_nat_gateway: true
+    deploy_app_gateway: false      # Optional — enable if UAT needs WAF testing
+    deploy_apim: false             # Optional — enable if UAT needs APIM testing
+    deploy_ddos_protection: false
+    deploy_dr: false
 
-    # Network — different IP range from dev to avoid clash
+    # ── DR Config ──────────────────────────────────────────
+    dr:
+      secondary_location: southindia
+      secondary_region_short: sin
+      sql_failover: false
+      traffic_manager: false
+
+    # ── Network ────────────────────────────────────────────
     network:
       vnet_prefix: 10.1.0.0/24
       app_subnet: 10.1.0.0/27
       data_subnet: 10.1.0.32/27
       gw_subnet: 10.1.0.64/27
 
-    # Compute — slightly higher than dev for realistic load testing
+    # ── Compute ────────────────────────────────────────────
     app_service:
       sku: B2
       tier: Basic
 
-    # Database
+    # ── Database ───────────────────────────────────────────
     sql:
       admin_login: sbmadmin
       database_sku: S1
 
-    # Cache
+    # ── Cache ──────────────────────────────────────────────
     redis:
       sku: Standard
       family: C
       capacity: 1
 
-    # Event Hub
+    # ── Event Hub ──────────────────────────────────────────
     eventhub:
       throughput_units: 1
       partition_count: 2
       retention_days: 7
 
-    # Storage
+    # ── Storage ────────────────────────────────────────────
     storage:
       sku: Standard_LRS
 
-    # Monitoring
+    # ── Monitoring ─────────────────────────────────────────
     monitoring:
       log_retention_days: 30
 
-    # Key Vault
+    # ── Key Vault ──────────────────────────────────────────
     keyvault:
       secret_expiry_days: 45
       soft_delete_retention_days: 7
 
-  qa:
-    # ── QA runs on Client Azure ───────────────────────────────
-    location: centralindia         # TODO: update to client's preferred region
-    region_short: cin              # TODO: update to match location above
-
-    # Feature Flags
-    deploy_app_gateway: true
-    deploy_apim: true
-    deploy_nat_gateway: true
-    deploy_scheduler: true
-
-    # Network
-    network:
-      vnet_prefix: 10.3.0.0/23
-      app_subnet: 10.3.0.0/26
-      data_subnet: 10.3.0.64/26
-      gw_subnet: 10.3.0.128/26
-
-    # Compute
-    app_service:
-      sku: P1v3
-      tier: PremiumV3
-
-    # Database
-    sql:
-      admin_login: sbmadmin
-      database_sku: S2
-
-    # Cache
-    redis:
-      sku: Standard
-      family: C
-      capacity: 2
-
-    # Event Hub
-    eventhub:
-      throughput_units: 2
-      partition_count: 4
-      retention_days: 7
-
-    # Storage
-    storage:
-      sku: Standard_GRS
-
-    # Monitoring
-    monitoring:
-      log_retention_days: 60
-
-    # Key Vault
-    keyvault:
-      secret_expiry_days: 45
-      soft_delete_retention_days: 30
-
+  # ──────────────────────────────────────────────────────────
+  # PROD — Client Azure — Production
+  # ──────────────────────────────────────────────────────────
   prod:
-    # ── PROD runs on Client Azure ─────────────────────────────
     location: centralindia         # TODO: update to client's preferred region
     region_short: cin              # TODO: update to match location above
 
-    # Feature Flags
+    # ── Feature Flags ──────────────────────────────────────
+    deploy_vnet: true
+    deploy_keyvault: true
+    deploy_monitoring: true
+    deploy_storage: true
+    deploy_sql: true
+    deploy_redis: true
+    deploy_eventhub: true
+    deploy_app_service: true
+    deploy_scheduler: true
+    deploy_nat_gateway: true
     deploy_app_gateway: true
     deploy_apim: true
-    deploy_nat_gateway: true
-    deploy_scheduler: true
+    deploy_ddos_protection: true   # ← ENABLED for PROD
+    deploy_dr: true                # ← ENABLED for PROD
 
-    # Network
+    # ── DR Config ──────────────────────────────────────────
+    dr:
+      secondary_location: southindia
+      secondary_region_short: sin
+      sql_failover: true
+      traffic_manager: true
+
+    # ── Network ────────────────────────────────────────────
     network:
-      vnet_prefix: 10.5.0.0/23
+      vnet_prefix: 10.5.0.0/23    # TODO: confirm with client this range is free
       app_subnet: 10.5.0.0/26
       data_subnet: 10.5.0.64/26
       gw_subnet: 10.5.0.128/26
 
-    # Compute
+    # ── Compute ────────────────────────────────────────────
     app_service:
       sku: P2v3
       tier: PremiumV3
 
-    # Database
+    # ── Database ───────────────────────────────────────────
     sql:
       admin_login: sbmadmin
       database_sku: S3
 
-    # Cache
+    # ── Cache ──────────────────────────────────────────────
     redis:
       sku: Standard
       family: C
       capacity: 2
 
-    # Event Hub
+    # ── Event Hub ──────────────────────────────────────────
     eventhub:
       throughput_units: 2
       partition_count: 4
       retention_days: 7
 
-    # Storage
+    # ── Storage ────────────────────────────────────────────
     storage:
       sku: Standard_GRS
 
-    # Monitoring
+    # ── Monitoring ─────────────────────────────────────────
     monitoring:
       log_retention_days: 90
 
-    # Key Vault
+    # ── Key Vault ──────────────────────────────────────────
     keyvault:
       secret_expiry_days: 45
       soft_delete_retention_days: 90

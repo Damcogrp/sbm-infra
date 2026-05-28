@@ -18,6 +18,7 @@ param dataSubnetPrefix string
 param gwSubnetPrefix string = '10.0.3.0/24'
 param deployAppGateway bool = false
 param natGatewayId string = ''
+param ddosPlanId string = ''     // DDoS Protection Plan ID (empty = Basic tier)
 param tags object
 
 var vnetName    = 'vnet-${base}'
@@ -185,6 +186,8 @@ resource vnet 'Microsoft.Network/virtualNetworks@2023-04-01' = {
   tags: tags
   properties: {
     addressSpace: { addressPrefixes: [ vnetAddressPrefix ] }
+    enableDdosProtection: !empty(ddosPlanId)
+    ddosProtectionPlan: empty(ddosPlanId) ? null : { id: ddosPlanId }
     subnets: concat(
       [
         {
