@@ -14,7 +14,6 @@ param alertEmailReceivers array = []
 param appServicePlanId string
 param frontendAppId string = ''
 param backendAppId string = ''
-param functionAppId string = ''
 param sqlServerId string = ''
 param redisId string = ''
 param keyVaultId string = ''
