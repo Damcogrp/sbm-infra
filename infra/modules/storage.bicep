@@ -50,5 +50,4 @@ resource blobServices 'Microsoft.Storage/storageAccounts/blobServices@2023-01-01
 
 output storageAccountId string = storageAccount.id
 output storageAccountName string = storageAccount.name
-output storageAccountId string = storageAccount.id
 output storageConnectionString string = 'DefaultEndpointsProtocol=https;AccountName=${storageAccount.name};AccountKey=${storageAccount.listKeys().keys[0].value};EndpointSuffix=core.windows.net'
