@@ -129,8 +129,8 @@ environments:
     deploy_app_service: true
     deploy_scheduler: true
     deploy_nat_gateway: true
-    deploy_app_gateway: true
-    deploy_apim: true
+    deploy_app_gateway: false
+    deploy_apim: false
     deploy_ddos_protection: false  # Optional — enable if client requests
     deploy_dr: false
 
@@ -150,8 +150,8 @@ environments:
 
     # ── Compute ────────────────────────────────────────────
     app_service:
-      sku: P1v3
-      tier: PremiumV3
+      sku: B1
+      tier: Basic
 
     # ── Database ───────────────────────────────────────────
     sql:
