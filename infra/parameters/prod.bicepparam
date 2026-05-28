@@ -1,5 +1,5 @@
 // ============================================================
-// parameters/prod.bicepparam
+// parameters/dev.bicepparam
 // DO NOT EDIT — all values driven from infra/config.yml
 // ============================================================
 
@@ -20,14 +20,21 @@ param deployAppGateway       = env.deploy_app_gateway
 param deployApim             = env.deploy_apim
 param deployNatGateway       = env.deploy_nat_gateway
 param deployScheduler        = env.deploy_scheduler
+param deployDdosProtection   = env.deploy_ddos_protection
+param deployDr               = env.deploy_dr
+
+// ── DR Config ─────────────────────────────────────────────────
+param drSecondaryLocation    = env.dr.secondary_location
+param drSecondaryRegionShort = env.dr.secondary_region_short
+param drSqlFailover          = env.dr.sql_failover
+param drTrafficManager       = env.dr.traffic_manager
 
 // ── Alerts ────────────────────────────────────────────────────
-param alertsEnabled             = alr.enabled
-param alertEmailReceivers       = alr.email_receivers
-param cpuThresholdPercent       = alr.cpu_threshold_percent
-param memoryThresholdPercent    = alr.memory_threshold_percent
-param http5xxThreshold          = alr.http_5xx_threshold
-param sqlDtuThresholdPercent    = alr.sql_dtu_threshold_percent
+param alertsEnabled               = alr.enabled
+param alertEmailReceivers         = alr.email_receivers
+param cpuThresholdPercent         = alr.cpu_threshold_percent
+param memoryThresholdPercent      = alr.memory_threshold_percent
+param sqlDtuThresholdPercent      = alr.sql_dtu_threshold_percent
 param redisMemoryThresholdPercent = alr.redis_memory_threshold_percent
 
 // ── Compute ───────────────────────────────────────────────────
