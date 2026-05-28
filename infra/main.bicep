@@ -1,6 +1,11 @@
 // ============================================================
 // main.bicep — SBM Infrastructure Orchestrator
-// Version: 3.0
+// Version: 4.0
+// Changes:
+//   - Expanded alerts (availability, http5xx, KV access denied)
+//   - DR Strategy (Traffic Manager + SQL Failover Group)
+//   - DDoS Protection Standard (configurable flag)
+//   - UAT environment support
 // ============================================================
 
 targetScope = 'resourceGroup'
@@ -22,10 +27,12 @@ param regionShort string = 'cin'
 param location string = 'centralindia'
 
 // ── Feature Flags ─────────────────────────────────────────────
-param deployAppGateway   bool = false
-param deployApim         bool = false
-param deployNatGateway   bool = true
-param deployScheduler    bool = true
+param deployAppGateway      bool = false
+param deployApim            bool = false
+param deployNatGateway      bool = true
+param deployScheduler       bool = true
+param deployDdosProtection  bool = false   // DDoS Standard — prod only
+param deployDr              bool = false   // DR — prod only
 
 // ── Alert Parameters ──────────────────────────────────────────
 param alertsEnabled               bool  = true
@@ -34,9 +41,17 @@ param cpuThresholdPercent         int   = 80
 param memoryThresholdPercent      int   = 85
 param sqlDtuThresholdPercent      int   = 80
 param redisMemoryThresholdPercent int   = 80
+param http5xxThreshold            int   = 10
+param availabilityThresholdPercent int  = 99
+
+// ── DR Parameters ─────────────────────────────────────────────
+param drSecondaryLocation    string = 'southindia'
+param drSecondaryRegionShort string = 'sin'
+param drSqlFailover          bool   = false
+param drTrafficManager       bool   = false
 
 // ── App Service Parameters ────────────────────────────────────
-param appServicePlanSku  string = 'B2'
+param appServicePlanSku  string = 'B1'
 param appServicePlanTier string = 'Basic'
 
 // ── SQL Parameters ────────────────────────────────────────────
@@ -91,6 +106,16 @@ var commonTags = {
 
 var base = '${projectName}-${environment}-${regionShort}'
 
+// ── Module: DDoS Protection ───────────────────────────────────
+module ddos 'modules/ddos.bicep' = if (deployDdosProtection) {
+  name: 'deploy-ddos-${environment}'
+  params: {
+    location: location
+    base: base
+    tags: commonTags
+  }
+}
+
 // ── Module: NAT Gateway ───────────────────────────────────────
 module natGateway 'modules/natgateway.bicep' = if (deployNatGateway) {
   name: 'deploy-natgw-${environment}'
@@ -113,6 +138,7 @@ module vnet 'modules/vnet.bicep' = {
     gwSubnetPrefix: gwSubnetPrefix
     deployAppGateway: deployAppGateway
     natGatewayId: deployNatGateway ? natGateway.outputs.natGatewayId : ''
+    ddosPlanId: deployDdosProtection ? ddos.outputs.ddosPlanId : ''
     tags: commonTags
   }
 }
@@ -198,7 +224,7 @@ module eventHub 'modules/eventhub.bicep' = {
 // ── SQL Connection String ─────────────────────────────────────
 var sqlConnStr = 'Server=tcp:${sql.outputs.sqlServerFqdn},1433;Initial Catalog=${sql.outputs.sqlDatabaseName};Persist Security Info=False;User ID=${sqlAdminLogin};Password=${sqlAdminPassword};MultipleActiveResultSets=False;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;'
 
-// ── Module: App Services (Linux + Nginx) ─────────────────────
+// ── Module: App Services ──────────────────────────────────────
 module appService 'modules/appservice.bicep' = {
   name: 'deploy-app-${environment}'
   params: {
@@ -224,7 +250,7 @@ module appService 'modules/appservice.bicep' = {
   }
 }
 
-// ── Module: Scheduler (Logic App) ────────────────────────────
+// ── Module: Scheduler ────────────────────────────────────────
 module scheduler 'modules/scheduler.bicep' = if (deployScheduler) {
   name: 'deploy-scheduler-${environment}'
   params: {
@@ -234,7 +260,7 @@ module scheduler 'modules/scheduler.bicep' = if (deployScheduler) {
   }
 }
 
-// ── Module: Alerts ────────────────────────────────────────────
+// ── Module: Alerts (expanded) ────────────────────────────────
 module alerts 'modules/alerts.bicep' = if (alertsEnabled) {
   name: 'deploy-alerts-${environment}'
   params: {
@@ -242,13 +268,20 @@ module alerts 'modules/alerts.bicep' = if (alertsEnabled) {
     tags: commonTags
     alertEmailReceivers: alertEmailReceivers
     appServicePlanId: appService.outputs.appServicePlanId
+    frontendAppId: appService.outputs.frontendAppId
+    backendAppId: appService.outputs.backendAppId
+    functionAppId: appService.outputs.functionAppId
     sqlServerId: sql.outputs.sqlServerId
     redisId: redis.outputs.redisCacheId
     keyVaultId: keyVault.outputs.keyVaultId
+    storageAccountId: storage.outputs.storageAccountId
+    logAnalyticsId: monitoring.outputs.logAnalyticsId
     cpuThresholdPercent: cpuThresholdPercent
     memoryThresholdPercent: memoryThresholdPercent
     sqlDtuThresholdPercent: sqlDtuThresholdPercent
     redisMemoryThresholdPercent: redisMemoryThresholdPercent
+    http5xxThreshold: http5xxThreshold
+    availabilityThresholdPercent: availabilityThresholdPercent
   }
 }
 
@@ -277,6 +310,22 @@ module appGateway 'modules/appgateway.bicep' = if (deployAppGateway) {
   }
 }
 
+// ── Module: DR ───────────────────────────────────────────────
+module dr 'modules/dr.bicep' = if (deployDr && drTrafficManager) {
+  name: 'deploy-dr-${environment}'
+  params: {
+    base: base
+    tags: commonTags
+    primaryLocation: location
+    primaryFrontendFqdn: appService.outputs.frontendAppFqdn
+    primaryBackendFqdn: appService.outputs.backendAppFqdn
+    primarySqlServerId: sql.outputs.sqlServerId
+    primarySqlServerName: sql.outputs.sqlServerName
+    secondaryLocation: drSecondaryLocation
+    secondaryRegionShort: drSecondaryRegionShort
+  }
+}
+
 // ── Outputs ───────────────────────────────────────────────────
 output frontendUrl        string = appService.outputs.frontendAppUrl
 output backendUrl         string = appService.outputs.backendAppUrl
@@ -294,3 +343,5 @@ output apimGatewayUrl     string = deployApim ? apim.outputs.apimGatewayUrl : 'A
 output appGatewayPublicIp string = deployAppGateway ? appGateway.outputs.appGatewayPublicIp : 'AppGW not deployed'
 output schedulerName      string = deployScheduler ? scheduler.outputs.logicAppName : 'Scheduler not deployed'
 output alertActionGroupId string = alertsEnabled ? alerts.outputs.actionGroupId : 'Alerts not enabled'
+output ddosPlanId         string = deployDdosProtection ? ddos.outputs.ddosPlanId : 'DDoS not deployed'
+output trafficManagerFqdn string = (deployDr && drTrafficManager) ? dr.outputs.trafficManagerFqdn : 'DR not deployed'

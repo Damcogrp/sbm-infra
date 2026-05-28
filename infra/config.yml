@@ -40,6 +40,15 @@ environments:
     deploy_apim: false
     deploy_nat_gateway: true
     deploy_scheduler: true
+    deploy_ddos_protection: false  # DDoS Standard ~$2944/month — keep false for dev
+    deploy_dr: false               # Disaster Recovery — keep false for dev
+
+    # Disaster Recovery config (only used if deploy_dr: true)
+    dr:
+      secondary_location: southindia
+      secondary_region_short: sin
+      sql_failover: false
+      traffic_manager: false
 
     # Network — tighter IP schema for dev
     network:
@@ -94,6 +103,15 @@ environments:
     deploy_apim: false             # Keep false unless client needs APIM in UAT
     deploy_nat_gateway: true
     deploy_scheduler: true
+    deploy_ddos_protection: false  # DDoS Standard — keep false for UAT
+    deploy_dr: false               # DR — not needed for UAT
+
+    # Disaster Recovery config
+    dr:
+      secondary_location: southindia
+      secondary_region_short: sin
+      sql_failover: false
+      traffic_manager: false
 
     # Network — different IP range from dev to avoid clash
     network:
