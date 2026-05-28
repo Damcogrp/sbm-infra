@@ -12,8 +12,6 @@ param alertEmailReceivers array = []
 
 // ── Resource IDs ──────────────────────────────────────────────
 param appServicePlanId string
-param frontendAppId string = ''
-param backendAppId string = ''
 param sqlServerId string = ''
 param redisId string = ''
 param keyVaultId string = ''
@@ -227,63 +225,11 @@ resource alertKvAccessDenied 'Microsoft.Insights/metricAlerts@2018-03-01' = if (
   }
 }
 
-// ── Point 3a: Alert: Frontend App Availability ────────────────
-resource alertFrontendAvailability 'Microsoft.Insights/metricAlerts@2018-03-01' = if (!empty(frontendAppId)) {
-  name: 'alert-${base}-fe-availability'
-  location: 'global'
-  tags: tags
-  properties: {
-    description: 'Frontend App Service availability is low'
-    severity: 1
-    enabled: true
-    scopes: [ frontendAppId ]
-    evaluationFrequency: 'PT5M'
-    windowSize: 'PT15M'
-    criteria: {
-      'odata.type': 'Microsoft.Azure.Monitor.SingleResourceMultipleMetricCriteria'
-      allOf: [
-        {
-          name: 'FeAvailability'
-          metricName: 'Availability'
-          operator: 'LessThan'
-          threshold: availabilityThresholdPercent
-          timeAggregation: 'Average'
-          criterionType: 'StaticThresholdCriterion'
-        }
-      ]
-    }
-    actions: [ { actionGroupId: actionGroup.id } ]
-  }
-}
+// Frontend App availability alert removed — Availability metric not supported on App Service
+// Use Application Insights availability tests instead
 
-// ── Point 3a: Alert: Backend App Availability ─────────────────
-resource alertBackendAvailability 'Microsoft.Insights/metricAlerts@2018-03-01' = if (!empty(backendAppId)) {
-  name: 'alert-${base}-be-availability'
-  location: 'global'
-  tags: tags
-  properties: {
-    description: 'Backend App Service availability is low'
-    severity: 1
-    enabled: true
-    scopes: [ backendAppId ]
-    evaluationFrequency: 'PT5M'
-    windowSize: 'PT15M'
-    criteria: {
-      'odata.type': 'Microsoft.Azure.Monitor.SingleResourceMultipleMetricCriteria'
-      allOf: [
-        {
-          name: 'BeAvailability'
-          metricName: 'Availability'
-          operator: 'LessThan'
-          threshold: availabilityThresholdPercent
-          timeAggregation: 'Average'
-          criterionType: 'StaticThresholdCriterion'
-        }
-      ]
-    }
-    actions: [ { actionGroupId: actionGroup.id } ]
-  }
-}
+// Backend App availability alert removed — Availability metric not supported on App Service
+// Use Application Insights availability tests instead
 
 // ── Point 3a: Alert: Storage Account Availability ─────────────
 resource alertStorageAvailability 'Microsoft.Insights/metricAlerts@2018-03-01' = if (!empty(storageAccountId)) {
