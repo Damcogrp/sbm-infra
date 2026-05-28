@@ -233,8 +233,6 @@ module alerts 'modules/alerts.bicep' = if (alertsEnabled && deployMonitoring && 
     base: base, tags: commonTags
     alertEmailReceivers: alertEmailReceivers
     appServicePlanId: appService.outputs.appServicePlanId
-    frontendAppId: appService.outputs.frontendAppId
-    backendAppId: appService.outputs.backendAppId
     sqlServerId: deploySql ? sql.outputs.sqlServerId : ''
     redisId: deployRedis ? redis.outputs.redisCacheId : ''
     keyVaultId: deployKeyVault ? keyVault.outputs.keyVaultId : ''
