@@ -270,7 +270,7 @@ module appGateway 'modules/appgateway.bicep' = if (deployAppGateway && deployVne
 }
 
 // ── Module: DR ───────────────────────────────────────────────
-module dr 'modules/dr.bicep' = if (deployDr && drTrafficManager && deployAppService && deploySql) {
+module dr 'modules/dr.bicep' = if (deployDr && deployAppService && deploySql) {
   name: 'deploy-dr-${environment}'
   params: {
     base: base, tags: commonTags
@@ -296,4 +296,4 @@ output appGatewayPublicIp string = deployAppGateway ? appGateway.outputs.appGate
 output schedulerName      string = deployScheduler ? scheduler.outputs.logicAppName : 'Scheduler not deployed'
 output alertActionGroupId string = alertsEnabled ? alerts.outputs.actionGroupId : 'Alerts not enabled'
 output ddosPlanId         string = deployDdosProtection ? ddos.outputs.ddosPlanId : 'DDoS not deployed'
-output trafficManagerFqdn string = (deployDr && drTrafficManager) ? dr.outputs.trafficManagerFqdn : 'DR not deployed'
+output trafficManagerFqdn string = deployDr ? dr.outputs.trafficManagerFqdn : 'DR not deployed'
