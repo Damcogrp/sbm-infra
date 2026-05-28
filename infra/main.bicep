@@ -48,10 +48,6 @@ param http5xxThreshold             int   = 10
 param availabilityThresholdPercent int   = 99
 
 // ── DR Parameters ─────────────────────────────────────────────
-param drSecondaryLocation    string = 'southindia'
-param drSecondaryRegionShort string = 'sin'
-param drSqlFailover          bool   = false
-param drTrafficManager       bool   = false
 
 // ── App Service Parameters ────────────────────────────────────
 param appServicePlanSku  string = 'B1'
@@ -239,7 +235,6 @@ module alerts 'modules/alerts.bicep' = if (alertsEnabled && deployMonitoring && 
     appServicePlanId: appService.outputs.appServicePlanId
     frontendAppId: appService.outputs.frontendAppId
     backendAppId: appService.outputs.backendAppId
-    functionAppId: appService.outputs.functionAppId
     sqlServerId: deploySql ? sql.outputs.sqlServerId : ''
     redisId: deployRedis ? redis.outputs.redisCacheId : ''
     keyVaultId: deployKeyVault ? keyVault.outputs.keyVaultId : ''
@@ -279,13 +274,8 @@ module dr 'modules/dr.bicep' = if (deployDr && drTrafficManager && deployAppServ
   name: 'deploy-dr-${environment}'
   params: {
     base: base, tags: commonTags
-    primaryLocation: location
     primaryFrontendFqdn: appService.outputs.frontendAppFqdn
-    primaryBackendFqdn: appService.outputs.backendAppFqdn
-    primarySqlServerId: sql.outputs.sqlServerId
     primarySqlServerName: sql.outputs.sqlServerName
-    secondaryLocation: drSecondaryLocation
-    secondaryRegionShort: drSecondaryRegionShort
   }
 }
 
