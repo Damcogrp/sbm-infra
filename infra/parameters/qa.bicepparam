@@ -32,10 +32,6 @@ param deployDdosProtection   = env.deploy_ddos_protection
 param deployDr               = env.deploy_dr
 
 // ── DR Config ─────────────────────────────────────────────────
-param drSecondaryLocation    = env.dr.secondary_location
-param drSecondaryRegionShort = env.dr.secondary_region_short
-param drSqlFailover          = env.dr.sql_failover
-param drTrafficManager       = env.dr.traffic_manager
 
 // ── Alerts ────────────────────────────────────────────────────
 param alertsEnabled               = alr.enabled
