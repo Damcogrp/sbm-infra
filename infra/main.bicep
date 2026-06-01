@@ -1,6 +1,6 @@
 // ============================================================
 // main.bicep — SBM Infrastructure Orchestrator
-// Version: 4.0 — Full feature flags for all services
+// Version: 1.0 — Full feature flags for all services
 // ============================================================
 
 targetScope = 'resourceGroup'
