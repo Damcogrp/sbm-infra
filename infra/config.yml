@@ -150,8 +150,8 @@ environments:
 
     # ── Compute ────────────────────────────────────────────
     app_service:
-      sku: S1
-      tier: Standard 
+      sku: B2
+      tier: Basic 
     # ── Database ───────────────────────────────────────────
     sql:
       admin_login: sbmadmin
