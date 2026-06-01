@@ -1,0 +1,206 @@
+# ============================================================
+# deploy-infra-prod.yml — PROD Environment (Client Azure)
+# All config values are read from infra/config.yml
+# NO hardcoded values — client never needs to edit this file
+# ============================================================
+
+name: SBM Infra — Prod Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "deploy-prod" to confirm PRODUCTION deployment'
+        required: true
+        type: string
+      change_ticket:
+        description: 'Change approval ticket number'
+        required: true
+        type: string
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  # ── Job 1: Load config from config.yml ──────────────────────
+  load-config:
+    name: Load config.yml
+    runs-on: ubuntu-latest
+    outputs:
+      project_name:   ${{ steps.cfg.outputs.project_name }}
+      location:       ${{ steps.cfg.outputs.location }}
+      region_short:   ${{ steps.cfg.outputs.region_short }}
+      resource_group: ${{ steps.cfg.outputs.resource_group }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install yq
+        run: |
+          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+
+      - name: Read config.yml
+        id: cfg
+        run: |
+          PROJECT=$(yq '.project.name' infra/config.yml)
+          LOCATION=$(yq '.environments.prod.location' infra/config.yml)
+          REGION=$(yq '.environments.prod.region_short' infra/config.yml)
+          RG="rg-${PROJECT}-prod-${REGION}"
+
+          echo "project_name=$PROJECT"   >> $GITHUB_OUTPUT
+          echo "location=$LOCATION"      >> $GITHUB_OUTPUT
+          echo "region_short=$REGION"    >> $GITHUB_OUTPUT
+          echo "resource_group=$RG"      >> $GITHUB_OUTPUT
+
+          echo "✅ Project:        $PROJECT"
+          echo "✅ Location:       $LOCATION"
+          echo "✅ Region Short:   $REGION"
+          echo "✅ Resource Group: $RG"
+
+  # ── Job 2: Confirm intent ────────────────────────────────────
+  confirm:
+    name: Confirm PROD deployment
+    runs-on: ubuntu-latest
+    needs: load-config
+    steps:
+      - name: Validate confirmation
+        run: |
+          if [ "${{ github.event.inputs.confirm }}" != "deploy-prod" ]; then
+            echo "ERROR: Type 'deploy-prod' to confirm. Got: ${{ github.event.inputs.confirm }}"
+            exit 1
+          fi
+          echo "Change Ticket: ${{ github.event.inputs.change_ticket }}"
+          echo "Triggered by:  ${{ github.actor }}"
+          echo "Confirmed. Deploying to PROD: ${{ needs.load-config.outputs.resource_group }}"
+
+  # ── Job 3: What-If Preview ───────────────────────────────────
+  validate:
+    name: What-If Preview (Client PROD)
+    runs-on: ubuntu-latest
+    needs: [load-config, confirm]
+    environment: prod
+    env:
+      PROJECT_NAME:   ${{ needs.load-config.outputs.project_name }}
+      LOCATION:       ${{ needs.load-config.outputs.location }}
+      REGION_SHORT:   ${{ needs.load-config.outputs.region_short }}
+      RESOURCE_GROUP: ${{ needs.load-config.outputs.resource_group }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure Login — Client PROD (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id:       ${{ secrets.AZURE_CLIENT_ID_PROD }}
+          tenant-id:       ${{ secrets.AZURE_TENANT_ID_PROD }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID_PROD }}
+
+      - name: Install Bicep CLI
+        run: az bicep install && az bicep version
+
+      - name: Bicep Lint
+        run: |
+          az bicep lint --file infra/main.bicep
+          echo "Lint passed."
+
+      - name: What-If Preview
+        run: |
+          az group create \
+            --name ${{ env.RESOURCE_GROUP }} \
+            --location ${{ env.LOCATION }} \
+            --tags Project=${{ env.PROJECT_NAME }} Environment=prod \
+                   ManagedBy=damco DeployedBy=github-actions 2>/dev/null || true
+
+          az deployment group what-if \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --template-file infra/main.bicep \
+            --parameters infra/parameters/prod.bicepparam \
+            --parameters sqlAdminPassword='placeholder-whatif' \
+            --result-format FullResourcePayloads
+
+  # ── Job 4: Deploy to Client PROD ─────────────────────────────
+  deploy:
+    name: Deploy to PROD (Client Azure)
+    runs-on: ubuntu-latest
+    needs: [load-config, validate]
+    environment: prod
+    env:
+      PROJECT_NAME:   ${{ needs.load-config.outputs.project_name }}
+      LOCATION:       ${{ needs.load-config.outputs.location }}
+      REGION_SHORT:   ${{ needs.load-config.outputs.region_short }}
+      RESOURCE_GROUP: ${{ needs.load-config.outputs.resource_group }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure Login — Client PROD (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id:       ${{ secrets.AZURE_CLIENT_ID_PROD }}
+          tenant-id:       ${{ secrets.AZURE_TENANT_ID_PROD }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID_PROD }}
+
+      - name: Install Bicep CLI
+        run: az bicep install && az bicep version
+
+      - name: Create Resource Group
+        run: |
+          az group create \
+            --name ${{ env.RESOURCE_GROUP }} \
+            --location ${{ env.LOCATION }} \
+            --tags Project=${{ env.PROJECT_NAME }} Environment=prod \
+                   ManagedBy=damco DeployedBy=github-actions \
+                   ChangeTicket=${{ github.event.inputs.change_ticket }} \
+                   BuildId=${{ github.run_id }}
+
+      - name: Deploy Bicep
+        run: |
+          az deployment group create \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --template-file infra/main.bicep \
+            --parameters infra/parameters/prod.bicepparam \
+            --parameters sqlAdminPassword='${{ secrets.SQL_ADMIN_PASSWORD_PROD }}' \
+            --name "deploy-${{ env.PROJECT_NAME }}-prod-${{ github.run_id }}" \
+            --mode Incremental
+          echo "PROD Deployment complete."
+
+      - name: Print Outputs (incl. Static IP + AppGW IP)
+        run: |
+          echo "=== PROD Deployment Outputs ==="
+          az deployment group show \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --name "deploy-${{ env.PROJECT_NAME }}-prod-${{ github.run_id }}" \
+            --query properties.outputs -o table
+          echo ""
+          echo "IMPORTANT: Share staticOutboundIp and appGatewayPublicIp with client for firewall whitelisting."
+
+      - name: Smoke Test
+        run: |
+          PASS=0; FAIL=0
+          BASE="${{ env.PROJECT_NAME }}-prod-${{ env.REGION_SHORT }}"
+          RG="${{ env.RESOURCE_GROUP }}"
+
+          check() {
+            RESULT=$(az resource list --resource-group $RG \
+              --resource-type "$2" --query "[?name=='$1'].name" -o tsv)
+            if [ -z "$RESULT" ]; then echo "  FAIL: $1"; FAIL=$((FAIL+1))
+            else echo "  PASS: $1"; PASS=$((PASS+1)); fi
+          }
+
+          check "vnet-${BASE}"     "Microsoft.Network/virtualNetworks"
+          check "kv-${BASE}"       "Microsoft.KeyVault/vaults"
+          check "asp-${BASE}"      "Microsoft.Web/serverfarms"
+          check "app-${BASE}-fe"   "Microsoft.Web/sites"
+          check "app-${BASE}-be"   "Microsoft.Web/sites"
+          check "func-${BASE}-evb" "Microsoft.Web/sites"
+          check "sql-${BASE}"      "Microsoft.Sql/servers"
+          check "redis-${BASE}"    "Microsoft.Cache/redis"
+          check "evhns-${BASE}"    "Microsoft.EventHub/namespaces"
+          check "agw-${BASE}"      "Microsoft.Network/applicationGateways"
+          check "apim-${BASE}"     "Microsoft.ApiManagement/service"
+          check "natgw-${BASE}"    "Microsoft.Network/natGateways"
+
+          echo "Results: $PASS passed, $FAIL failed"
+          [ $FAIL -gt 0 ] && echo "PROD smoke tests FAILED." && exit 1
+          echo "All PROD smoke tests passed."
