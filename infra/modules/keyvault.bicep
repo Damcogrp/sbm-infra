@@ -13,7 +13,7 @@ param secretExpiryDays int = 45
 param softDeleteRetentionDays int = 7
 param allowedIpAddresses array = []
 
-var keyVaultName = 'kv-${base}-02'   // ← -02 suffix to avoid soft-delete conflict
+var keyVaultName = 'kv-${base}-03'   // ← -02 suffix to avoid soft-delete conflict
 
 resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
   name: keyVaultName
